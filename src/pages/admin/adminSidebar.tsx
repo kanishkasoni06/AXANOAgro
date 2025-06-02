@@ -38,11 +38,11 @@ const AdminSidebar: React.FC = () => {
   const isHomePage = location.pathname === "/";
 
   // Category icons
-  const categoryIcons: { [key: string]: JSX.Element } = {
-    Informative: <FaInfoCircle className="text-blue-500 text-xl" />,
-    "New Offer": <FaTag className="text-green-500 text-xl" />,
-    Ideas: <FaLightbulb className="text-yellow-500 text-xl" />,
-    "AI Advice": <FaRobot className="text-purple-500 text-xl" />,
+  const categoryIcons: { [key: string]: React.ComponentType<{ className?: string }> } = {
+    Informative: FaInfoCircle,
+    "New Offer": FaTag,
+    Ideas: FaLightbulb,
+    "AI Advice": FaRobot,
   };
 
   // Admin menu items

@@ -21,11 +21,11 @@ const NotificationComponent: React.FC<NotificationComponentProps> = ({ userType 
   const [isEnabled, setIsEnabled] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const categoryIcons: { [key: string]: JSX.Element } = {
-    Informative: <FaInfoCircle className="text-blue-500" />,
-    "New Offer": <FaTag className="text-green-500" />,
-    Ideas: <FaLightbulb className="text-yellow-500" />,
-    "AI Advice": <FaRobot className="text-purple-500" />,
+  const categoryIcons: { [key: string]: React.ComponentType<{ className?: string }> } = {
+    Informative: FaInfoCircle,
+    "New Offer": FaTag,
+    Ideas: FaLightbulb,
+    "AI Advice": FaRobot,
   };
 
   const requestPermissionAndRegisterToken = async () => {
