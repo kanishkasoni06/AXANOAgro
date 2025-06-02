@@ -1,6 +1,6 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, {  useState, useEffect } from "react";
 import { BiMenu, BiX } from "react-icons/bi";
-import { FaBell, FaTimes, FaAngleRight, FaInfoCircle, FaTag, FaLightbulb, FaRobot, FaShoppingCart, FaGavel, FaUsers, FaCog, FaSignOutAlt, FaTruck, FaTractor } from "react-icons/fa";
+import { FaBell,  FaAngleRight,FaShoppingCart, FaGavel, FaUsers,  FaSignOutAlt, FaTruck, FaTractor } from "react-icons/fa";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../../context/authContext";
 import { collection, query, onSnapshot, orderBy } from "firebase/firestore";
@@ -24,26 +24,15 @@ interface Notification {
 }
 
 const AdminSidebar: React.FC = () => {
-  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [isThinView, setIsThinView] = useState(false);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [notificationsLoading, setNotificationsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const location = useLocation();
   const { setUser } = useAuth();
 
   const isHomePage = location.pathname === "/";
 
-  // Category icons
-  const categoryIcons: { [key: string]: React.ComponentType<{ className?: string }> } = {
-    Informative: FaInfoCircle,
-    "New Offer": FaTag,
-    Ideas: FaLightbulb,
-    "AI Advice": FaRobot,
-  };
 
   // Admin menu items
   const menuItems: MenuItem[] = [
@@ -89,11 +78,6 @@ const AdminSidebar: React.FC = () => {
       onClick: () => navigate("/admin/notifications"),
       icon: <FaBell className="text-white" />,
     },
-    {
-      label: "Settings",
-      onClick: () => navigate("/admin/settings"),
-      icon: <FaCog className="text-white" />,
-    },
   ];
 
   // Fetch notifications (admin sees all notifications)
@@ -119,33 +103,12 @@ const AdminSidebar: React.FC = () => {
             : "N/A",
         });
       });
-      setNotifications(notificationsList);
-      setNotificationsLoading(false);
     }, (error) => {
-      console.error("Error fetching notifications:", error);
-      setNotificationsLoading(false);
+      console.error("Error fetching notifications:", error)
     });
 
     return () => unsubscribe();
   }, []);
-
-  // Handle click outside for notification dropdown
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsNotificationOpen(false);
-      }
-    };
-
-    if (isNotificationOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    } else {
-      document.removeEventListener('mousedown', handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [isNotificationOpen]);
 
   // Handle admin logout
   const handleLogout = async () => {
@@ -249,80 +212,6 @@ const AdminSidebar: React.FC = () => {
       </ul>
 
       <div className={`p-4 border-t border-green-700 space-y-2 ${isThinView ? 'flex flex-col items-center' : ''}`}>
-        {!isHomePage && (
-          <div className="relative" ref={dropdownRef}>
-            <button
-              onClick={() => setIsNotificationOpen(!isNotificationOpen)}
-              className={`flex items-center ${isThinView ? 'justify-center' : 'w-full'} p-3 hover:bg-green-700 rounded-lg transition-colors relative group`}
-            >
-              <FaBell className="w-5 h-5 text-green-200" />
-              {!isThinView && <span className="ml-3">Notifications</span>}
-              {isThinView && (
-                <span className="absolute left-full ml-2 bg-gray-800 text-white text-sm rounded py-1 px-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  Notifications
-                </span>
-              )}
-              {notifications.length > 0 && (
-                <span className="absolute top-1 right-1 h-2 w-2 bg-red-500 rounded-full"></span>
-              )}
-            </button>
-            {isNotificationOpen && (
-              <div className={`absolute ${isThinView ? 'left-16' : 'left-0'} bottom-12 w-80 bg-white rounded-lg shadow-xl border border-gray-200 z-50`}>
-                <div className="flex justify-between items-center p-4 border-b border-gray-200">
-                  <h3 className="font-semibold text-gray-800">Notifications</h3>
-                  <button
-                    onClick={() => setIsNotificationOpen(false)}
-                    className="text-gray-400 hover:text-gray-500"
-                  >
-                    <FaTimes className="h-4 w-4" />
-                  </button>
-                </div>
-                <div className="p-4 max-h-96 overflow-y-auto">
-                  {notificationsLoading ? (
-                    <div className="animate-pulse space-y-4">
-                      {[...Array(3)].map((_, i) => (
-                        <div key={i} className="h-12 bg-gray-200 rounded"></div>
-                      ))}
-                    </div>
-                  ) : notifications.length > 0 ? (
-                    notifications.map((notif) => (
-                      <div
-                        key={notif.id}
-                        className="mb-4 p-3 bg-gray-50 rounded-lg flex items-start space-x-3"
-                      >
-                        <div>{<>{categoryIcons[notif.category] ?? categoryIcons["Informative"]}</>}</div>
-                        <div className="flex-1">
-                          <h4 className="text-sm font-semibold text-gray-800">{notif.title}</h4>
-                          <p className="text-sm text-gray-600">{notif.body}</p>
-                          {notif.imageUrl && (
-                            <img
-                              src={notif.imageUrl}
-                              alt="Notification"
-                              className="mt-2 h-16 w-16 object-cover rounded"
-                            />
-                          )}
-                          <p className="text-xs text-gray-400 mt-1">{notif.createdAt}</p>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-center py-4">
-                      <p className="text-gray-500 text-sm">No new notifications</p>
-                    </div>
-                  )}
-                </div>
-                <div className="p-2 border-t border-gray-200 text-center">
-                  <button
-                    onClick={() => navigate("/admin/notifications")}
-                    className="text-sm text-blue-600 hover:text-blue-700"
-                  >
-                    View all notifications
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
 
         {!isHomePage && (
           <div className={`space-y-2 ${isThinView ? 'flex flex-col items-center' : ''}`}>
