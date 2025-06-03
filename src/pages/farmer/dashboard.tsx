@@ -1,10 +1,29 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../context/authContext";
 import { db } from "../../firebase/firebase";
-import { collection, query, where, getDocs, limit, orderBy, doc, getDoc } from "firebase/firestore";
-import {  FaGavel, FaTruck, FaHourglassHalf, FaWarehouse, FaStar } from "react-icons/fa";
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  doc,
+  getDoc,
+  updateDoc,
+  Timestamp,
+} from "firebase/firestore";
+import { FaGavel, FaTruck, FaHourglassHalf, FaWarehouse, FaStar, FaCheckCircle, FaTimesCircle } from "react-icons/fa";
 import { Bar, Line } from "react-chartjs-2";
-import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend } from "chart.js";
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  LineElement,
+  PointElement,
+  Title,
+  Tooltip,
+  Legend,
+} from "chart.js";
 
 // Register Chart.js components
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend);
@@ -23,6 +42,7 @@ interface Order {
   timestamp: any;
   timestampDate: Date;
   quantity: number;
+  source: "orders" | "bidItems";
 }
 
 interface MonthlySale {
@@ -37,9 +57,9 @@ interface ProductSale {
 
 interface GrainComparison {
   grain: string;
-  msp: number; // MSP in ₹/quintal
-  marketPrice: number; // Market price in ₹/quintal
-  difference: number; // Percentage difference
+  msp: number;
+  marketPrice: number;
+  difference: number;
 }
 
 const FarmerDashboard: React.FC = () => {
@@ -51,11 +71,12 @@ const FarmerDashboard: React.FC = () => {
   const [averageRating, setAverageRating] = useState<string>("No ratings yet");
   const [recentOrders, setRecentOrders] = useState<Order[]>([]);
   const [monthlySales, setMonthlySales] = useState<MonthlySale[]>([]);
-  const [productSales, setProductSales] = useState<ProductSale[]>([]); // State for product sales
+  const [productSales, setProductSales] = useState<ProductSale[]>([]);
   const [grainComparisons, setGrainComparisons] = useState<GrainComparison[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Function to format Date object to a readable string
+  // Format Date object to a readable string
   const formatDateTime = (date: Date): string => {
     return date.toLocaleString("en-IN", {
       month: "short",
@@ -68,10 +89,46 @@ const FarmerDashboard: React.FC = () => {
     }).replace(",", "");
   };
 
+  // Handle accepting an order or bidItem
+  const handleAcceptOrder = async (order: Order) => {
+    try {
+      const docRef = doc(db, order.source, order.id);
+      await updateDoc(docRef, {
+        status: "accepted",
+        acceptedAt: Timestamp.fromDate(new Date()),
+      });
+      setRecentOrders((prev) =>
+        prev.map((o) =>
+          o.id === order.id && o.source === order.source ? { ...o, status: "accepted" } : o
+        )
+      );
+      setPendingOrders((prev) => prev - 1);
+    } catch (err) {
+      console.error(`Error accepting ${order.source} ${order.id}:`, err);
+      setError("Failed to accept order. Please try again.");
+    }
+  };
+
+  // Handle declining an order or bidItem
+  const handleDeclineOrder = async (order: Order) => {
+    try {
+      const docRef = doc(db, order.source, order.id);
+      await updateDoc(docRef, {
+        status: "declined",
+      });
+      setRecentOrders((prev) => prev.filter((o) => !(o.id === order.id && o.source === order.source)));
+      setPendingOrders((prev) => prev - 1);
+    } catch (err) {
+      console.error(`Error declining ${order.source} ${order.id}:`, err);
+      setError("Failed to decline order. Please try again.");
+    }
+  };
+
   // Fetch data from Firestore
   useEffect(() => {
     const fetchDashboardData = async () => {
       if (!user || !user.uid) {
+        setError("Please log in to view your dashboard.");
         setLoading(false);
         return;
       }
@@ -79,138 +136,183 @@ const FarmerDashboard: React.FC = () => {
       setLoading(true);
       try {
         // Step 1: Fetch items owned by the farmer
-        const itemsQuery = query(
-          collection(db, "items"),
-          where("ownerUserId", "==", user.uid)
-        );
+        const itemsQuery = query(collection(db, "items"), where("ownerUserId", "==", user.uid));
         const itemsSnapshot = await getDocs(itemsQuery);
 
-        // Calculate total stock quantity
         let totalQuantity = 0;
         const farmerItemIds = new Set<string>();
-        itemsSnapshot.forEach(doc => {
+        itemsSnapshot.forEach((doc) => {
           const data = doc.data();
-          const quantity = Number(data.stock) || 0;
-          totalQuantity += quantity;
-          farmerItemIds.add(doc.id); // Store item IDs for matching
+          totalQuantity += Number(data.stock) || 0;
+          farmerItemIds.add(doc.id);
         });
         setTotalStockQuantity(totalQuantity);
 
         // Step 2: Fetch bidItems for the farmer
-        const bidItemsQuery = query(
-          collection(db, "bidItems"),
-          where("ownerUserId", "==", user.uid)
-        );
+        const bidItemsQuery = query(collection(db, "bidItems"), where("ownerUserId", "==", user.uid));
         const bidItemsSnapshot = await getDocs(bidItemsQuery);
+        setBidItemsCount(bidItemsSnapshot.size);
 
-        const bidItemsTotal = bidItemsSnapshot.size;
-        setBidItemsCount(bidItemsTotal);
-
-        // Step 3: Compute delivered, pending orders, and average farmer rating from bidItems
+        // Step 3: Process bidItems
         let deliveredFromBidItems = 0;
         let pendingFromBidItems = 0;
         let totalFarmerRatings = 0;
         let farmerRatingCount = 0;
-        const processedOrderIds = new Set<string>(); // To avoid double-counting
+        const bidItemOrders: Order[] = [];
+        const processedOrderIds = new Set<string>();
 
-        bidItemsSnapshot.forEach(doc => {
-          const data = doc.data();
-          const orderId = doc.id;
+        for (const bidDoc of bidItemsSnapshot.docs) {
+          const data = bidDoc.data();
+          const orderId = bidDoc.id;
+          if (processedOrderIds.has(orderId)) continue;
 
-          // Skip if already processed
-          if (processedOrderIds.has(orderId)) return;
-
-          // Check if bid was accepted (indicating an order)
-          if (data.acceptedBid) {
-            const deliveryDetails = data.deliveryDetails || [];
-            if (!Array.isArray(deliveryDetails) || deliveryDetails.length === 0) {
-              pendingFromBidItems++;
-              processedOrderIds.add(orderId);
-              return;
-            }
-
-            // Check if any delivery detail indicates the order is delivered
-            const isDelivered = Array.isArray(deliveryDetails) && deliveryDetails.some(
-              (detail: any) => detail.deliveredOrder === true
-            );
-            const isPending = !isDelivered && (
-              (data.status === "Pending" || data.status === "pending") ||
-              (Array.isArray(deliveryDetails) && deliveryDetails.some(
-                (detail: any) => detail.deliveredOrder !== true
-              ))
-            );
-
-            if (isDelivered) {
-              deliveredFromBidItems++;
-            } else if (isPending) {
-              pendingFromBidItems++;
-            }
-
-            processedOrderIds.add(orderId);
-          } else {
-            console.log(`BidItem ${doc.id} has no acceptedBid, skipping for order counts`);
-          }
-
-          // Calculate farmer ratings from ratings.farmerRating
-          if (data.ratings && typeof data.ratings.farmerRating === "number") {
-            totalFarmerRatings += data.ratings.farmerRating;
-            farmerRatingCount++;
-          }
-        });
-
-        // Compute average farmer rating
-        if (farmerRatingCount > 0) {
-          const avgRating = (totalFarmerRatings / farmerRatingCount).toFixed(1);
-          setAverageRating(`${avgRating} / 5`);
-        } else {
-          console.log("No farmer ratings found in bidItems");
-        }
-
-        // Step 4: Fetch all orders and filter based on item IDs
-        const ordersQuery = query(collection(db, "orders"));
-        const ordersSnapshot = await getDocs(ordersQuery);
-
-        // Compute delivered and pending orders from orders db
-        let deliveredFromOrders = 0;
-        let pendingFromOrders = 0;
-
-        ordersSnapshot.forEach(doc => {
-          const data = doc.data();
-          const orderId = doc.id;
-
-          // Skip if already processed via bidItems
-          if (processedOrderIds.has(orderId)) return;
-
-          // Check if the order contains any item owned by the farmer
-          const items = data.items || [];
-          const hasFarmerItem = items.some((item: any) => farmerItemIds.has(item.id));
-          if (!hasFarmerItem) {
-            return;
-          }
-
-          // Determine if the order is delivered or pending
+          const firstItem = data.item || {};
+          const timestampDate = data.createdAt ? data.createdAt.toDate() : new Date();
+          let status = data.status || "Pending";
           const deliveryDetails = data.deliveryDetails || {};
           const isDelivered = deliveryDetails.deliveredOrder === true;
 
           if (isDelivered) {
-            deliveredFromOrders++;
-            console.log(`Order ${doc.id} is Delivered`);
-          } else if (data.status !== "Delivered" ) {
-            pendingFromOrders++;
-          } else {
-            console.log(`Order ${doc.id} is neither Delivered nor Pending (status: ${data.status})`);
+            status = "Delivered";
+            deliveredFromBidItems++;
+          } else if (status.toLowerCase() === "pending") {
+            pendingFromBidItems++;
           }
 
+          if (data.ratings?.farmerRating && typeof data.ratings.farmerRating === "number") {
+            totalFarmerRatings += data.ratings.farmerRating;
+            farmerRatingCount++;
+          }
+
+          const order: Order = {
+            id: orderId,
+            productName: firstItem.name || "Unknown Item",
+            buyerId: data.buyerId || "",
+            customerName: "Unknown",
+            email: "N/A",
+            phone: "N/A",
+            address: data.deliveryAddress || "N/A",
+            paymentType: data.paymentType || "N/A",
+            status,
+            totalAmount: data.totalAmount || 0,
+            timestamp: data.createdAt,
+            timestampDate,
+            quantity: data.quantity || 1,
+            source: "bidItems",
+          };
+
+            if (order.buyerId) {
+            try {
+              const buyerDocRef = doc(db, "buyer", order.buyerId);
+              const buyerDoc = await getDoc(buyerDocRef);
+              if (buyerDoc.exists()) {
+              const buyerData = buyerDoc.data() as {
+                fullName?: string;
+                email?: string;
+                phone?: string;
+                address?: string;
+              };
+              order.customerName = buyerData.fullName || "Unknown";
+              order.email = buyerData.email || "N/A";
+              order.phone = buyerData.phone || "N/A";
+              order.address = buyerData.address || order.address;
+              }
+            } catch (err) {
+              console.error(`Error fetching buyer for bidItem ${orderId}:`, err);
+            }
+            }
+
+            // Do not add to recent orders if status is "active"
+            if (status.toLowerCase() !== "active") {
+            bidItemOrders.push(order);
+            }
           processedOrderIds.add(orderId);
+        }
+
+        if (farmerRatingCount > 0) {
+          setAverageRating(`${(totalFarmerRatings / farmerRatingCount).toFixed(1)} / 5`);
+        }
+
+        // Step 4: Fetch orders
+        const ordersQuery = query(collection(db, "orders"));
+        const ordersSnapshot = await getDocs(ordersQuery);
+
+        let deliveredFromOrders = 0;
+        let pendingFromOrders = 0;
+        const regularOrders: Order[] = [];
+
+        for (const orderDoc of ordersSnapshot.docs) {
+          const data = orderDoc.data();
+          const orderId = orderDoc.id;
+          if (processedOrderIds.has(orderId)) continue;
+
+          const items = data.items || [];
+          const hasFarmerItem = items.some((item: any) => farmerItemIds.has(item.id));
+          if (!hasFarmerItem) continue;
+
+          let status = data.status || "Pending";
+          const deliveryDetails = data.deliveryDetails || {};
+          const isDelivered = deliveryDetails.deliveredOrder === true;
+          if (isDelivered) {
+            status = "Delivered";
+            deliveredFromOrders++;
+          } else if (status.toLowerCase() === "pending") {
+            pendingFromOrders++;
+          }
+
+          const firstItem = items[0] || {};
+          const timestampDate = data.createdAt ? data.createdAt.toDate() : new Date();
+
+          const order: Order = {
+            id: orderId,
+            productName: firstItem.name || "Unknown Product",
+            buyerId: data.buyerId || "",
+            customerName: "Unknown",
+            email: "N/A",
+            phone: "N/A",
+            address: data.deliveryAddress || "N/A",
+            paymentType: data.paymentMethod || "N/A",
+            status ,
+            totalAmount: firstItem.totalAmount || data.totalAmount || 0,
+            timestamp: data.createdAt,
+            timestampDate,
+            quantity: firstItem.quantity || 0,
+            source: "orders",
+          };
+
+          if (order.buyerId) {
+            try {
+              const buyerDocRef = doc(db, "buyer", order.buyerId);
+              const buyerDoc = await getDoc(buyerDocRef);
+              if (buyerDoc.exists()) {
+                const buyerData = buyerDoc.data();
+                order.customerName = buyerData.fullName || "Unknown";
+                order.email = buyerData.email || "N/A";
+                order.phone = buyerData.phone || "N/A";
+                order.address = buyerData.address || order.address;
+              }
+            } catch (err) {
+              console.error(`Error fetching buyer for order ${orderId}:`, err);
+            }
+          }
+
+          regularOrders.push(order);
+          processedOrderIds.add(orderId);
+        }
+
+        // Combine and sort orders
+        const combinedOrders = [...bidItemOrders, ...regularOrders];
+        combinedOrders.sort((a, b) => {
+          if (a.status.toLowerCase() === "pending" && b.status.toLowerCase() !== "pending") return -1;
+          if (a.status.toLowerCase() !== "pending" && b.status.toLowerCase() === "pending") return 1;
+          return b.timestampDate.getTime() - a.timestampDate.getTime();
         });
+        setRecentOrders(combinedOrders.slice(0, 5));
 
-        // Combine delivered and pending counts
-        const totalDelivered = deliveredFromBidItems + deliveredFromOrders;
-        const totalPending = pendingFromBidItems + pendingFromOrders;
-        setDeliveredOrders(totalDelivered);
-        setPendingOrders(totalPending);
+        setDeliveredOrders(deliveredFromBidItems + deliveredFromOrders);
+        setPendingOrders(pendingFromBidItems + pendingFromOrders);
 
-        // Use dummy data for monthly sales (January to May 2025)
+        // Step 5: Dummy data for charts
         const dummyMonthlySales: MonthlySale[] = [
           { month: "Jan 2025", amount: 12000 },
           { month: "Feb 2025", amount: 15000 },
@@ -220,7 +322,6 @@ const FarmerDashboard: React.FC = () => {
         ];
         setMonthlySales(dummyMonthlySales);
 
-        // Use dummy data for product vs sales
         const dummyProductSales: ProductSale[] = [
           { product: "Wheat", amount: 25000 },
           { product: "Rice", amount: 18000 },
@@ -230,10 +331,11 @@ const FarmerDashboard: React.FC = () => {
         ];
         setProductSales(dummyProductSales);
 
+        // Step 6: Grain price comparison
         const wheatMSP2022 = 2015;
-        const wheatMSP2025 = Math.round(wheatMSP2022 * Math.pow(1.05, 3)); // ₹2317
+        const wheatMSP2025 = Math.round(wheatMSP2022 * Math.pow(1.05, 3));
         const riceMSP2022 = 2040;
-        const riceMSP2025 = Math.round(riceMSP2022 * Math.pow(1.05, 3)); // ₹2346
+        const riceMSP2025 = Math.round(riceMSP2022 * Math.pow(1.05, 3));
         const wheatMarketPrice = 2450;
         const riceMarketPrice = 2200;
 
@@ -252,86 +354,9 @@ const FarmerDashboard: React.FC = () => {
           },
         ];
         setGrainComparisons(grainData);
-
-        // Fetch recent orders (limit to 5)
-        const recentOrdersQuery = query(
-          collection(db, "orders"),
-          orderBy("createdAt", "desc"),
-          limit(5)
-        );
-        const recentOrdersSnapshot = await getDocs(recentOrdersQuery);
-
-        const recentOrdersData: Order[] = [];
-        for (const orderDoc of recentOrdersSnapshot.docs) {
-          const data = orderDoc.data();
-
-          // Filter orders to only include those with items owned by the farmer
-          const items = data.items || [];
-          const hasFarmerItem = items.some((item: any) => farmerItemIds.has(item.id));
-          if (!hasFarmerItem) {
-            continue;
-          }
-
-          // Determine order status
-          const deliveryDetails = data.deliveryDetails || {};
-          const isDelivered = deliveryDetails.deliveredOrder === true;
-          const orderStatus = isDelivered ? "Delivered" : data.status === "pending" ? "Pending" : "Other";
-
-          // Get product details from items array
-          const firstItem = data.items && data.items.length > 0 ? data.items[0] : {};
-
-          // Convert timestamp to Date object
-          const timestampDate = data.createdAt ? data.createdAt.toDate() : new Date();
-
-          // Validate required fields with fallbacks
-          const order: Order = {
-            id: orderDoc.id,
-            productName: firstItem.name || "Unknown Product",
-            buyerId: data.buyerId || "",
-            customerName: "Unknown",
-            email: "N/A",
-            phone: "N/A",
-            address: "N/A",
-            paymentType: "N/A",
-            status: orderStatus,
-            totalAmount: firstItem.totalAmount || 0,
-            timestamp: data.createdAt,
-            timestampDate: timestampDate,
-            quantity: firstItem.quantity || 0,
-          };
-
-          // Fetch customer details from buyer collection with error handling
-          if (order.buyerId) {
-            try {
-              const buyerDocRef = doc(db, "buyer", order.buyerId);
-              const buyerDoc = await getDoc(buyerDocRef);
-              
-              if (buyerDoc.exists()) {
-                const buyerData = buyerDoc.data() as { fullName?: string; email?: string; phone?: string; address?: string };
-                
-                order.customerName = buyerData.fullName || "Unknown";
-                order.email = buyerData.email || "N/A";
-                order.phone = buyerData.phone || "N/A";
-                order.address = buyerData.address || "N/A";
-              } else {
-                console.warn(`Buyer with ID ${order.buyerId} not found.`);
-              }
-            } catch (error) {
-              console.error(`Error fetching buyer details for buyerId ${order.buyerId}:`, error);
-            }
-          } else {
-            console.warn(`Order ${order.id} has no buyerId.`);
-          }
-
-          recentOrdersData.push(order);
-        }
-
-        // Sort recent orders by timestampDate (descending, latest first)
-        recentOrdersData.sort((a, b) => b.timestampDate.getTime() - a.timestampDate.getTime());
-        setRecentOrders(recentOrdersData);
-        
       } catch (error) {
         console.error("Error in fetchDashboardData:", error);
+        setError("Failed to load dashboard data.");
       } finally {
         setLoading(false);
       }
@@ -349,13 +374,13 @@ const FarmerDashboard: React.FC = () => {
     { icon: <FaStar className="text-yellow-500 text-3xl" />, title: "Farmer Rating", value: averageRating },
   ];
 
-  // Chart data for Amount vs. Month (Bar Chart)
+  // Chart data for Amount vs. Month
   const barChartData = {
-    labels: monthlySales.map(sale => sale.month),
+    labels: monthlySales.map((sale) => sale.month),
     datasets: [
       {
         label: "Total Amount (₹)",
-        data: monthlySales.map(sale => sale.amount),
+        data: monthlySales.map((sale) => sale.amount),
         backgroundColor: "#2CD14D",
         borderColor: "#24B042",
         borderWidth: 1,
@@ -367,55 +392,35 @@ const FarmerDashboard: React.FC = () => {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: {
-        display: false,
-      },
+      legend: { display: false },
       title: {
         display: true,
         text: "Monthly Sales (Amount vs. Month)",
-        font: {
-          size: 18,
-          weight: "bold" as const,
-        },
+        font: { size: 18, weight: "bold" as const },
         color: "#1f2937",
       },
     },
     scales: {
-      x: {
-        ticks: {
-          color: "#4b5563",
-        },
-        grid: {
-          display: false,
-        },
-      },
+      x: { ticks: { color: "#4b5563" }, grid: { display: false } },
       y: {
-        ticks: {
-          color: "#4b5563",
-        },
-        grid: {
-          color: "rgba(0, 0, 0, 0.1)",
-        },
-        title: {
-          display: true,
-          text: "Total Amount (₹)",
-          color: "#4b5563",
-        },
+        ticks: { color: "#4b5563" },
+        grid: { color: "rgba(0, 0, 0, 0.1)" },
+        title: { display: true, text: "Total Amount (₹)", color: "#4b5563" },
       },
     },
   };
 
-  // Chart data for Product vs Sales (Line Chart)
+  // Chart data for Product vs Sales
   const lineChartData = {
-    labels: productSales.map(sale => sale.product),
+    labels: productSales.map((sale) => sale.product),
     datasets: [
       {
         label: "Sales Amount (₹)",
-        data: productSales.map(sale => sale.amount),
+        data: productSales.map((sale) => sale.amount),
         fill: false,
         borderColor: "#2CD14D",
-        backgroundColor: "#2CD14D", // For points
-        tension: 0.1, // Smoothness of the line
+        backgroundColor: "#2CD14D",
+        tension: 0.1,
         pointRadius: 5,
         pointHoverRadius: 7,
       },
@@ -426,233 +431,237 @@ const FarmerDashboard: React.FC = () => {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: {
-        display: false,
-      },
+      legend: { display: false },
       title: {
         display: true,
         text: "Product vs Sales",
-        font: {
-          size: 18,
-          weight: "bold" as const,
-        },
+        font: { size: 18, weight: "bold" as const },
         color: "#1f2937",
       },
     },
     scales: {
-      x: {
-        ticks: {
-          color: "#4b5563",
-        },
-        grid: {
-          display: false,
-        },
-      },
+      x: { ticks: { color: "#4b5563" }, grid: { display: false } },
       y: {
-        ticks: {
-          color: "#4b5563",
-        },
-        grid: {
-          color: "rgba(0, 0, 0, 0.1)",
-        },
-        title: {
-          display: true,
-          text: "Sales Amount (₹)",
-          color: "#4b5563",
-        },
+        ticks: { color: "#4b5563" },
+        grid: { color: "rgba(0, 0, 0, 0.1)" },
+        title: { display: true, text: "Sales Amount (₹)", color: "#4b5563" },
       },
     },
   };
 
   return (
-    <div className="min-h-screen mx-auto max-w-7xl  py-10 px-4 sm:px-6 lg:px-8">
-           <header className="flex justify-between items-center mb-6 ">
+    <div className="min-h-screen mx-auto max-w-7xl py-10 px-4 sm:px-6 lg:px-8">
+      <header className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold text-gray-800">Dashboard</h1>
       </header>
-        
-        {/* Key Metrics */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-10 w-full">
-          {metrics.map((metric, index) => (
-            <div
-              key={index}
-              className="bg-white rounded-xl shadow-lg p-6 flex items-center space-x-4 border border-gray-100 hover:shadow-xl transition-all duration-200 hover:scale-[1.01]"
-            >
-              <div>{metric.icon}</div>
-              <div>
-                <h3 className="text-gray-800 font-medium text-lg font-sans">{metric.title}</h3>
-                <p className="text-2xl font-bold text-gray-700 font-sans">
-                  {loading ? (
-                    <span className="animate-pulse bg-gray-200 h-8 w-16 inline-block rounded"></span>
-                  ) : (
-                    metric.value
-                  )}
-                </p>
-              </div>
+
+      {error && (
+        <div className="mb-6 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg font-sans">
+          {error}
+        </div>
+      )}
+
+      {/* Key Metrics */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-10 w-full">
+        {metrics.map((metric, index) => (
+          <div
+            key={index}
+            className="bg-white rounded-xl shadow-lg p-6 flex items-center space-x-4 border border-gray-100 hover:shadow-xl transition-all duration-200 hover:scale-[1.01]"
+          >
+            <div>{metric.icon}</div>
+            <div>
+              <h3 className="text-gray-800 font-medium text-lg font-sans">{metric.title}</h3>
+              <p className="text-2xl font-bold text-gray-700 font-sans">
+                {loading ? (
+                  <span className="animate-pulse bg-gray-200 h-8 w-16 inline-block rounded"></span>
+                ) : (
+                  metric.value
+                )}
+              </p>
             </div>
-          ))}
-        </div>
-
-        {/* Charts (Monthly Sales and Product vs Sales) Side by Side */}
-        <div className="flex flex-col lg:flex-row gap-6 mb-10  w-full">
-          {/* Bar Chart: Monthly Sales */}
-          <div className="flex-1 bg-white rounded-xl shadow-lg p-6 border border-gray-100">
-            <h2 className="text-xl font-bold text-gray-900 mb-4 font-sans">
-              Monthly Sales (Amount vs. Month)
-            </h2>
-            {loading ? (
-              <div className="animate-pulse h-64 bg-gray-200 rounded"></div>
-            ) : monthlySales.length > 0 ? (
-              <div className="h-64">
-                <Bar data={barChartData} options={barChartOptions} />
-              </div>
-            ) : (
-              <p className="text-gray-500 font-sans">No sales data available.</p>
-            )}
           </div>
+        ))}
+      </div>
 
-          {/* Line Chart: Product vs Sales */}
-          <div className="flex-1 bg-white rounded-xl shadow-lg p-6 border border-gray-100">
-            <h2 className="text-xl font-bold text-gray-900 mb-4 font-sans">
-              Product vs Sales
-            </h2>
-            {loading ? (
-              <div className="animate-pulse h-64 bg-gray-200 rounded"></div>
-            ) : productSales.length > 0 ? (
-              <div className="h-64">
-                <Line data={lineChartData} options={lineChartOptions} />
-              </div>
-            ) : (
-              <p className="text-gray-500 font-sans">No product sales data available.</p>
-            )}
-          </div>
-        </div>
-
-        {/* Market Analysis: Grain Price Comparison */}
-        <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100 mb-10 w-full">
+      {/* Charts */}
+      <div className="flex flex-col lg:flex-row gap-6 mb-10 w-full">
+        <div className="flex-1 bg-white rounded-xl shadow-lg p-6 border border-gray-100">
           <h2 className="text-xl font-bold text-gray-900 mb-4 font-sans">
-            Market Analysis: Grain Price Comparison (MSP vs Market Price)
+            Monthly Sales (Amount vs. Month)
           </h2>
           {loading ? (
-            <div className="animate-pulse space-y-4">
-              {[...Array(3)].map((_, i) => (
-                <div key={i} className="h-12 bg-gray-200 rounded"></div>
-              ))}
-            </div>
-          ) : grainComparisons.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead>
-                  <tr>
-                    {["Grain", "MSP (₹/quintal)", "Market Price (₹/quintal)", "Difference (%)"].map((header, index) => (
-                      <th
-                        key={index}
-                        className="px-4 py-2 text-left text-sm font-medium text-gray-800 font-sans"
-                      >
-                        {header}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {grainComparisons.map((grain, index) => (
-                    <tr key={index} className="hover:bg-gray-50">
-                      <td className="px-4 py-2 text-sm text-gray-700 font-sans">{grain.grain}</td>
-                      <td className="px-4 py-2 text-sm text-gray-700 font-sans">{grain.msp}</td>
-                      <td className="px-4 py-2 text-sm text-gray-700 font-sans">{grain.marketPrice}</td>
-                      <td className="px-4 py-2 text-sm font-sans">
-                        <span
-                          className={`${
-                            grain.difference >= 0
-                              ? "text-[#2CD14D]"
-                              : "text-red-600"
-                          }`}
-                        >
-                          {grain.difference.toFixed(1)}%
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="animate-pulse h-64 bg-gray-200 rounded"></div>
+          ) : monthlySales.length > 0 ? (
+            <div className="h-64">
+              <Bar data={barChartData} options={barChartOptions} />
             </div>
           ) : (
-            <p className="text-gray-500 font-sans">No market analysis data available.</p>
+            <p className="text-gray-500 font-sans">No sales data available.</p>
           )}
         </div>
 
-        {/* Recent Orders Table */}
-        <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100 w-full">
+        <div className="flex-1 bg-white rounded-xl shadow-lg p-6 border border-gray-100">
           <h2 className="text-xl font-bold text-gray-900 mb-4 font-sans">
-            Recent Orders
+            Product vs Sales
           </h2>
           {loading ? (
-            <div className="animate-pulse space-y-4">
-              {[...Array(5)].map((_, i) => (
-                <div key={i} className="h-12 bg-gray-200 rounded"></div>
-              ))}
-            </div>
-          ) : recentOrders.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead>
-                  <tr>
-                    {[
-                      "Order ID",
-                      "Date & Time",
-                      "Product",
-                      "Customer Name",
-                      "Email ID",
-                      "Phone No.",
-                      "Address",
-                      "Payment Type",
-                      "Status",
-                    ].map((header, index) => (
-                      <th
-                        key={index}
-                        className="px-4 py-2 text-left text-sm font-medium text-gray-800 font-sans"
-                      >
-                        {header}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {recentOrders.map(order => (
-                    <tr key={order.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-2 text-sm text-gray-700 font-sans">{order.id}</td>
-                      <td className="px-4 py-2 text-sm text-gray-700 font-sans">
-                        {order.timestampDate ? formatDateTime(order.timestampDate) : "N/A"}
-                      </td>
-                      <td className="px-4 py-2 text-sm text-gray-700 font-sans">{order.productName}</td>
-                      <td className="px-4 py-2 text-sm text-gray-700 font-sans">{order.customerName}</td>
-                      <td className="px-4 py-2 text-sm text-gray-700 font-sans">{order.email}</td>
-                      <td className="px-4 py-2 text-sm text-gray-700 font-sans">{order.phone}</td>
-                      <td className="px-4 py-2 text-sm text-gray-700 font-sans">{order.address}</td>
-                      <td className="px-4 py-2 text-sm text-gray-700 font-sans">{order.paymentType}</td>
-                      <td className="px-4 py-2 text-sm font-sans">
-                        <span
-                          className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            order.status === "Delivered"
-                              ? "bg-green-100 text-[#2CD14D]"
-                              : order.status === "Pending"
-                              ? "bg-yellow-100 text-yellow-600"
-                              : "bg-gray-100 text-gray-600"
-                          }`}
-                        >
-                          {order.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="animate-pulse h-64 bg-gray-200 rounded"></div>
+          ) : productSales.length > 0 ? (
+            <div className="h-64">
+              <Line data={lineChartData} options={lineChartOptions} />
             </div>
           ) : (
-            <p className="text-gray-500 font-sans">No recent orders.</p>
+            <p className="text-gray-500 font-sans">No product sales data available.</p>
           )}
         </div>
       </div>
-    
+
+      {/* Market Analysis */}
+      <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100 mb-10 w-full">
+        <h2 className="text-xl font-bold text-gray-900 mb-4 font-sans">
+          Market Analysis: Grain Price Comparison (MSP vs Market Price)
+        </h2>
+        {loading ? (
+          <div className="animate-pulse space-y-4">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="h-12 bg-gray-200 rounded"></div>
+            ))}
+          </div>
+        ) : grainComparisons.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead>
+                <tr>
+                  {["Grain", "MSP (₹/quintal)", "Market Price (₹/quintal)", "Difference (%)"].map(
+                    (header, index) => (
+                      <th
+                        key={index}
+                        className="px-4 py-2 text-left text-sm font-medium text-gray-800 font-sans"
+                      >
+                        {header}
+                      </th>
+                    )
+                  )}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {grainComparisons.map((grain, index) => (
+                  <tr key={index} className="hover:bg-gray-50">
+                    <td className="px-4 py-2 text-sm text-gray-700 font-sans">{grain.grain}</td>
+                    <td className="px-4 py-2 text-sm text-gray-700 font-sans">{grain.msp}</td>
+                    <td className="px-4 py-2 text-sm text-gray-700 font-sans">{grain.marketPrice}</td>
+                    <td className="px-4 py-2 text-sm">
+                      <span className={grain.difference >= 0 ? "text-[#2CD14D]" : "text-red-600"}>
+                        {grain.difference.toFixed(1)}%
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-gray-500 font-sans">No market analysis data available.</p>
+        )}
+      </div>
+
+      {/* Recent Orders */}
+      <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100 w-full">
+        <h2 className="text-xl font-bold text-gray-900 mb-4 font-sans">Recent Orders</h2>
+        {loading ? (
+          <div className="animate-pulse space-y-4">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="h-12 bg-gray-200 rounded"></div>
+            ))}
+          </div>
+        ) : recentOrders.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead>
+                <tr>
+                  {[
+                    "Order ID",
+                    "Date & Time",
+                    "Product",
+                    "Customer Name",
+                    "Email ID",
+                    "Phone No.",
+                    "Address",
+                    "Payment Type",
+                    "Status",
+                    "Actions",
+                  ].map((header, index) => (
+                    <th
+                      key={index}
+                      className="px-4 py-2 text-left text-sm font-medium text-gray-800 font-sans"
+                    >
+                      {header}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {recentOrders.map((order) => (
+                  <tr key={`${order.source}-${order.id}`} className="hover:bg-gray-50">
+                    <td className="px-4 py-2 text-sm text-gray-700 font-sans">{order.id}</td>
+                    <td className="px-4 py-2 text-sm text-gray-700 font-sans">
+                      {order.timestampDate ? formatDateTime(order.timestampDate) : "N/A"}
+                    </td>
+                    <td className="px-4 py-2 text-sm text-gray-700 font-sans">{order.productName}</td>
+                    <td className="px-4 py-2 text-sm text-gray-700 font-sans">{order.customerName}</td>
+                    <td className="px-4 py-2 text-sm text-gray-700 font-sans">{order.email}</td>
+                    <td className="px-4 py-2 text-sm text-gray-700 font-sans">{order.phone}</td>
+                    <td className="px-4 py-2 text-sm text-gray-700 font-sans">{order.address}</td>
+                    <td className="px-4 py-2 text-sm text-gray-700 font-sans">{order.paymentType}</td>
+                    <td className="px-4 py-2 text-sm font-sans">
+                      <span
+                        className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          order.status === "Delivered"
+                            ? "bg-green-100 text-[#2CD14D]"
+                            : order.status.toLowerCase() === "pending"
+                            ? "bg-yellow-100 text-yellow-600"
+                            : order.status === "accepted"
+                            ? "bg-blue-100 text-blue-600"
+                            : "bg-gray-100 text-gray-600"
+                        }`}
+                      >
+                        {order.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2 text-sm font-sans">
+                      {order.status.toLowerCase() === "pending" ? (
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={() => handleAcceptOrder(order)}
+                            className="px-2 py-1 bg-[#2CD14D] text-white rounded-lg hover:bg-[#24B042] text-xs flex items-center"
+                            title="Accept Order"
+                          >
+                            <FaCheckCircle className="mr-1 h-3 w-3" />
+                            Accept
+                          </button>
+                          <button
+                            onClick={() => handleDeclineOrder(order)}
+                            className="px-2 py-1 bg-red-500 text-white rounded-lg hover:bg-red-600 text-xs flex items-center"
+                            title="Decline Order"
+                          >
+                            <FaTimesCircle className="mr-1 h-3 w-3" />
+                            Decline
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-gray-500">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-gray-500 font-sans">No recent orders.</p>
+        )}
+      </div>
+    </div>
   );
 };
 

@@ -27,6 +27,13 @@ interface BidItem {
     amount: number;
     deliveryPartnerId: string;
     lockedAt: any;
+    acceptedForDelivery: boolean;
+    onMyWayToFarmer?: boolean;
+    reachedFarmer?: boolean;
+    pickedUpOrder?: boolean;
+    onMyWayToBuyer?: boolean;
+    reachedBuyer?: boolean;
+    deliveredOrder?: boolean;
   }>;
   status: string;
 }

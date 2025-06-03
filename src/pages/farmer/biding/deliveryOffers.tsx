@@ -6,23 +6,32 @@ import { FaStar, FaPhone } from 'react-icons/fa';
 import { MessageCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+interface DeliveryBid {
+  amount: number;
+  deliveryPartnerId: string;
+  assignedAt: any;
+}
+
+interface DeliveryDetail {
+  amount: number;
+  deliveryPartnerId: string;
+  lockedAt: any;
+  acceptedForDelivery: boolean;
+  onMyWayToFarmer?: boolean;
+  reachedFarmer?: boolean;
+  pickedUpOrder?: boolean;
+  onMyWayToBuyer?: boolean;
+  reachedBuyer?: boolean;
+  deliveredOrder?: boolean;
+}
+
 interface BidItem {
   id: string;
   itemName: string;
   quantity: number;
-  acceptedBid?: { buyerId: string; bidAmount: number };
-  deliveryDetails?: Array<{
-    amount: number;
-    deliveryPartnerId: string;
-    lockedAt: any;
-    acceptedForDelivery?: boolean;
-    onMyWayToFarmer?: boolean;
-    reachedFarmer?: boolean;
-    pickedUpOrder?: boolean;
-    onMyWayToBuyer?: boolean;
-    reachedBuyer?: boolean;
-    deliveredOrder?: boolean;
-  }>;
+  acceptedBid?: { buyerId: string; bidAmount: number; acceptedAt: any };
+  deliveryBids?: DeliveryBid[];
+  deliveryDetails?: DeliveryDetail[];
   farmerRatings?: {
     deliveryPartnerRating: number;
     comment: string;
@@ -58,28 +67,44 @@ const DeliveryOffers = ({ bidItems, buyerDetails, deliveryPartnerDetails }: Deli
   const [submittingRating, setSubmittingRating] = useState<boolean>(false);
   const [chatPartner, setChatPartner] = useState<{ partnerId: string; partnerName: string } | null>(null);
 
-  const itemsWithDelivery = bidItems.filter(item => item.deliveryDetails && item.deliveryDetails.length > 0);
+  // Filter items with deliveryBids or accepted deliveryDetails
+  const itemsWithDelivery = bidItems.filter(
+    (item) =>
+      (item.deliveryBids && item.deliveryBids.length > 0) ||
+      (item.deliveryDetails && item.deliveryDetails.some((detail) => detail.acceptedForDelivery))
+  );
   const displayedItems = itemsWithDelivery.length > 3 && !showAllItems ? itemsWithDelivery.slice(0, 3) : itemsWithDelivery;
 
   const handleAcceptOffer = async (itemId: string, selectedOfferIndex: number) => {
     setLoadingOfferId(`${itemId}-${selectedOfferIndex}`);
     try {
       const itemRef = doc(db, 'bidItems', itemId);
-      const item = itemsWithDelivery.find(item => item.id === itemId);
-      if (!item || !item.deliveryDetails) return;
+      const item = itemsWithDelivery.find((item) => item.id === itemId);
+      if (!item || !item.deliveryBids) return;
 
-      const updatedDeliveryDetails = item.deliveryDetails.map((detail, index) => ({
-        ...detail,
-        acceptedForDelivery: index === selectedOfferIndex,
-      }));
+      const selectedBid = item.deliveryBids[selectedOfferIndex];
+      const newDeliveryDetail: DeliveryDetail = {
+        amount: selectedBid.amount,
+        deliveryPartnerId: selectedBid.deliveryPartnerId,
+        lockedAt: Timestamp.now(),
+        acceptedForDelivery: true,
+        onMyWayToFarmer: false,
+        reachedFarmer: false,
+        pickedUpOrder: false,
+        onMyWayToBuyer: false,
+        reachedBuyer: false,
+        deliveredOrder: false,
+      };
 
+      // Update Firestore with new deliveryDetails
       await updateDoc(itemRef, {
-        deliveryDetails: updatedDeliveryDetails,
+        deliveryDetails: [newDeliveryDetail],
       });
 
-      const updatedItems = bidItems.map(bidItem =>
+      // Update local state (optional, depending on parent component's state management)
+      const updatedItems = bidItems.map((bidItem) =>
         bidItem.id === itemId
-          ? { ...bidItem, deliveryDetails: updatedDeliveryDetails }
+          ? { ...bidItem, deliveryDetails: [newDeliveryDetail] }
           : bidItem
       );
       console.log('Updated bidItems:', updatedItems);
@@ -130,7 +155,8 @@ const DeliveryOffers = ({ bidItems, buyerDetails, deliveryPartnerDetails }: Deli
 
       await updateDoc(itemRef, { farmerRatings });
 
-      const updatedItems = bidItems.map(bidItem =>
+      // Update local state (optional)
+      const updatedItems = bidItems.map((bidItem) =>
         bidItem.id === ratingItem.id
           ? { ...bidItem, farmerRatings }
           : bidItem
@@ -146,7 +172,7 @@ const DeliveryOffers = ({ bidItems, buyerDetails, deliveryPartnerDetails }: Deli
   };
 
   const isDelivered = (item: BidItem) => {
-    const acceptedDelivery = item.deliveryDetails?.find(detail => detail.acceptedForDelivery);
+    const acceptedDelivery = item.deliveryDetails?.find((detail) => detail.acceptedForDelivery);
     return acceptedDelivery?.deliveredOrder === true;
   };
 
@@ -158,13 +184,15 @@ const DeliveryOffers = ({ bidItems, buyerDetails, deliveryPartnerDetails }: Deli
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {displayedItems.map(item => (
+            {displayedItems.map((item) => (
               <div
                 key={item.id}
                 className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 hover:shadow-xl transition-shadow duration-300"
               >
                 <h3 className="text-xl font-semibold text-gray-800 mb-2 font-serif">{item.itemName}</h3>
-                <p className="text-sm text-gray-600 mb-2 font-sans">{t('quantity')} {item.quantity}</p>
+                <p className="text-sm text-gray-600 mb-2 font-sans">
+                  {t('quantity')} {item.quantity}
+                </p>
                 {item.acceptedBid && (
                   <p className="text-sm text-gray-600 mb-2 font-sans">
                     {t('acceptedBidBy', {
@@ -174,71 +202,93 @@ const DeliveryOffers = ({ bidItems, buyerDetails, deliveryPartnerDetails }: Deli
                   </p>
                 )}
                 <h4 className="text-base font-semibold text-gray-700 mb-3 font-serif">{t('deliveryOffers')}</h4>
-                <ul className="space-y-3">
-                  {item.deliveryDetails!.map((detail, index) => (
-                    <li key={index} className="text-sm text-gray-600 font-sans flex items-center justify-between">
-                      <span>
-                        {t('deliveryOffer', {
-                          amount: detail.amount,
-                          partnerName: deliveryPartnerDetails[detail.deliveryPartnerId]?.fullName || 'Loading...',
-                          lockedAt: detail.lockedAt.toDate().toLocaleString(),
-                        })}
-                      </span>
-                      <button
-                        onClick={() => handleAcceptOffer(item.id, index)}
-                        disabled={detail.acceptedForDelivery || loadingOfferId === `${item.id}-${index}`}
-                        className={`ml-2 px-3 py-1 rounded-lg text-sm font-sans ${
-                          detail.acceptedForDelivery
-                            ? 'bg-green-200 text-green-800 cursor-not-allowed'
-                            : loadingOfferId === `${item.id}-${index}`
-                            ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
-                            : 'bg-green-600 text-white hover:bg-green-700'
-                        }`}
-                      >
-                        {detail.acceptedForDelivery ? t('accepted') : t('acceptOffer')}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-                {item.deliveryDetails!.map((detail, index) => (
-                  <div
-                    key={`contact-${index}`}
-                    className="mt-4 p-3 bg-gray-50 rounded-lg flex items-center justify-between border border-gray-200"
-                  >
-                    <div className="flex items-center space-x-2">
-                      <FaPhone className="h-5 w-5 text-green-600" />
-                      <span className="text-sm font-medium text-gray-700 font-sans">
-                        {t('contactDeliveryPartner', { partnerName: deliveryPartnerDetails[detail.deliveryPartnerId]?.fullName || 'Delivery Partner' })}
-                      </span>
+                {item.deliveryBids && item.deliveryBids.length > 0 && (
+                  <ul className="space-y-3">
+                    {item.deliveryBids.map((bid, index) => (
+                      <li key={index} className="text-sm text-gray-600 font-sans flex items-center justify-between">
+                        <span>
+                          {t('deliveryOffer', {
+                            amount: bid.amount,
+                            partnerName: deliveryPartnerDetails[bid.deliveryPartnerId]?.fullName || 'Loading...',
+                            lockedAt: bid.assignedAt.toDate().toLocaleString(),
+                          })}
+                        </span>
+                        <button
+                          onClick={() => handleAcceptOffer(item.id, index)}
+                          disabled={
+                            item.deliveryDetails?.some((detail) => detail.acceptedForDelivery) ||
+                            loadingOfferId === `${item.id}-${index}`
+                          }
+                          className={`ml-2 px-3 py-1 rounded-lg text-sm font-sans ${
+                            item.deliveryDetails?.some((detail) => detail.acceptedForDelivery)
+                              ? 'bg-green-200 text-green-800 cursor-not-allowed'
+                              : loadingOfferId === `${item.id}-${index}`
+                              ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
+                              : 'bg-green-600 text-white hover:bg-green-700'
+                          }`}
+                        >
+                          {item.deliveryDetails?.some((detail) => detail.acceptedForDelivery)
+                            ? t('accepted')
+                            : t('acceptOffer')}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {item.deliveryDetails?.some((detail) => detail.acceptedForDelivery) && (
+                  <>
+                    <div className="mt-4 p-3 bg-gray-50 rounded-lg flex items-center justify-between border border-gray-200">
+                      <div className="flex items-center space-x-2">
+                        <FaPhone className="h-5 w-5 text-green-600" />
+                        <span className="text-sm font-medium text-gray-700 font-sans">
+                          {t('contactDeliveryPartner', {
+                            partnerName:
+                              deliveryPartnerDetails[
+                                item.deliveryDetails.find((detail) => detail.acceptedForDelivery)?.deliveryPartnerId || ''
+                              ]?.fullName || 'Delivery Partner',
+                          })}
+                        </span>
+                      </div>
+                      <div className="flex space-x-2">
+                        <a
+                          href={`tel:${
+                            deliveryPartnerDetails[
+                              item.deliveryDetails.find((detail) => detail.acceptedForDelivery)?.deliveryPartnerId || ''
+                            ]?.phoneNumber || ''
+                          }`}
+                          className={`text-sm font-sans px-3 py-1 rounded-lg ${
+                            deliveryPartnerDetails[
+                              item.deliveryDetails.find((detail) => detail.acceptedForDelivery)?.deliveryPartnerId || ''
+                            ]?.phoneNumber
+                              ? 'bg-green-600 text-white hover:bg-green-700'
+                              : 'bg-gray-300 text-gray-600 cursor-not-allowed'
+                          }`}
+                        >
+                          {deliveryPartnerDetails[
+                            item.deliveryDetails.find((detail) => detail.acceptedForDelivery)?.deliveryPartnerId || ''
+                          ]?.phoneNumber
+                            ? t('callNow')
+                            : t('numberUnavailable')}
+                        </a>
+                        <button
+                          onClick={() =>
+                            handleOpenChat(
+                              item.deliveryDetails!.find((detail) => detail.acceptedForDelivery)!.deliveryPartnerId,
+                              deliveryPartnerDetails[
+                                item.deliveryDetails!.find((detail) => detail.acceptedForDelivery)!.deliveryPartnerId
+                              ]?.fullName || 'Delivery Partner'
+                            )
+                          }
+                          className="text-sm font-sans px-3 py-1 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+                        >
+                          <MessageCircle className="h-6 w-6 inline-block" />
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex space-x-2">
-                      <a
-                        href={`tel:${deliveryPartnerDetails[detail.deliveryPartnerId]?.phoneNumber || ''}`}
-                        className={`text-sm font-sans px-3 py-1 rounded-lg ${
-                          deliveryPartnerDetails[detail.deliveryPartnerId]?.phoneNumber
-                            ? 'bg-green-600 text-white hover:bg-green-700'
-                            : 'bg-gray-300 text-gray-600 cursor-not-allowed'
-                        }`}
-                      >
-                        {deliveryPartnerDetails[detail.deliveryPartnerId]?.phoneNumber
-                          ? t('callNow')
-                          : t('numberUnavailable')}
-                      </a>
-                      <button
-                        onClick={() =>
-                          handleOpenChat(
-                            detail.deliveryPartnerId,
-                            deliveryPartnerDetails[detail.deliveryPartnerId]?.fullName || 'Delivery Partner'
-                          )
-                        }
-                        className="text-sm font-sans px-3 py-1 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
-                      >
-                        <MessageCircle className="h-6 w-6 inline-block" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                {item.deliveryDetails?.some(detail => detail.acceptedForDelivery) && (
+                    
+                  </>
+                )}
+                {item.deliveryDetails?.some((detail) => detail.acceptedForDelivery) && (
                   <div className="mt-4 flex space-x-3">
                     <button
                       onClick={() => handleTrackOrder(item)}
@@ -293,87 +343,127 @@ const DeliveryOffers = ({ bidItems, buyerDetails, deliveryPartnerDetails }: Deli
             </button>
             <h2 className="text-2xl font-bold text-gray-800 mb-6 font-serif">{t('allDeliveryOffers')}</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {itemsWithDelivery.map(item => (
+              {itemsWithDelivery.map((item) => (
                 <div
                   key={item.id}
                   className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100"
                 >
                   <h3 className="text-xl font-semibold text-gray-800 mb-2 font-serif">{item.itemName}</h3>
-                  <p className="text-sm text-gray-600 mb-2 font-sans">{t('quantity')} {item.quantity}</p>
+                  <p className="text-sm text-gray-600 mb-2 font-sans">
+                    {t('quantity')} {item.quantity}
+                  </p>
                   {item.acceptedBid && (
                     <p className="text-sm text-gray-600 mb-2 font-sans">
                       {t('acceptedBidBy', {
                         bidAmount: item.acceptedBid.bidAmount,
-                        buyerName: buyerDetails[item.acceptedBid?.buyerId]?.fullName || 'Loading...',
+                        buyerName: buyerDetails[item.acceptedBid.buyerId]?.fullName || 'Loading...',
                       })}
                     </p>
                   )}
                   <h4 className="text-base font-semibold text-gray-700 mb-3 font-serif">{t('deliveryOffers')}</h4>
-                  <ul className="space-y-3">
-                    {item.deliveryDetails!.map((detail, index) => (
-                      <li key={index} className="text-sm text-gray-600 font-sans flex items-center justify-between">
-                        <span>
-                          {t('deliveryOffer', {
-                            amount: detail.amount,
-                            partnerName: deliveryPartnerDetails[detail.deliveryPartnerId]?.fullName || 'Loading...',
-                            lockedAt: detail.lockedAt.toDate().toLocaleString(),
-                          })}
-                        </span>
-                        <button
-                          onClick={() => handleAcceptOffer(item.id, index)}
-                          disabled={detail.acceptedForDelivery || loadingOfferId === `${item.id}-${index}`}
-                          className={`ml-2 px-3 py-1 rounded-lg text-sm font-sans ${
-                            detail.acceptedForDelivery
-                              ? 'bg-green-200 text-green-800 cursor-not-allowed'
-                              : loadingOfferId === `${item.id}-${index}`
-                              ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
-                              : 'bg-green-600 text-white hover:bg-green-700'
-                          }`}
-                        >
-                          {detail.acceptedForDelivery ? t('accepted') : t('acceptOffer')}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                  {item.deliveryDetails!.map((detail, index) => (
-                    <div
-                      key={`contact-${index}`}
-                      className="mt-4 p-3 bg-gray-50 rounded-lg flex items-center justify-between border border-gray-200"
-                    >
-                      <div className="flex items-center space-x-2">
-                        <FaPhone className="h-5 w-5 text-green-600" />
-                        <span className="text-sm font-medium text-gray-700 font-sans">
-                          {t('contactDeliveryPartner', { partnerName: deliveryPartnerDetails[detail.deliveryPartnerId]?.fullName || 'Delivery Partner' })}
-                        </span>
+                  {item.deliveryBids && item.deliveryBids.length > 0 && (
+                    <ul className="space-y-3">
+                      {item.deliveryBids.map((bid, index) => (
+                        <li key={index} className="text-sm text-gray-600 font-sans flex items-center justify-between">
+                          <span>
+                            {t('deliveryOffer', {
+                              amount: bid.amount,
+                              partnerName: deliveryPartnerDetails[bid.deliveryPartnerId]?.fullName || 'Loading...',
+                              lockedAt: bid.assignedAt.toDate().toLocaleString(),
+                            })}
+                          </span>
+                          <button
+                            onClick={() => handleAcceptOffer(item.id, index)}
+                            disabled={
+                              item.deliveryDetails?.some((detail) => detail.acceptedForDelivery) ||
+                              loadingOfferId === `${item.id}-${index}`
+                            }
+                            className={`ml-2 px-3 py-1 rounded-lg text-sm font-sans ${
+                              item.deliveryDetails?.some((detail) => detail.acceptedForDelivery)
+                                ? 'bg-green-200 text-green-800 cursor-not-allowed'
+                                : loadingOfferId === `${item.id}-${index}`
+                                ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
+                                : 'bg-green-600 text-white hover:bg-green-700'
+                            }`}
+                          >
+                            {item.deliveryDetails?.some((detail) => detail.acceptedForDelivery)
+                              ? t('accepted')
+                              : t('acceptOffer')}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {item.deliveryDetails?.some((detail) => detail.acceptedForDelivery) && (
+                    <>
+                      <div className="mt-4 p-3 bg-gray-50 rounded-lg flex items-center justify-between border border-gray-200">
+                        <div className="flex items-center space-x-2">
+                          <FaPhone className="h-5 w-5 text-green-600" />
+                          <span className="text-sm font-medium text-gray-700 font-sans">
+                            {t('contactDeliveryPartner', {
+                              partnerName:
+                                deliveryPartnerDetails[
+                                  item.deliveryDetails.find((detail) => detail.acceptedForDelivery)?.deliveryPartnerId || ''
+                                ]?.fullName || 'Delivery Partner',
+                            })}
+                          </span>
+                        </div>
+                        <div className="flex space-x-2">
+                          <a
+                            href={`tel:${
+                              deliveryPartnerDetails[
+                                item.deliveryDetails.find((detail) => detail.acceptedForDelivery)?.deliveryPartnerId || ''
+                              ]?.phoneNumber || ''
+                            }`}
+                            className={`text-sm font-sans px-3 py-1 rounded-lg ${
+                              deliveryPartnerDetails[
+                                item.deliveryDetails.find((detail) => detail.acceptedForDelivery)?.deliveryPartnerId || ''
+                              ]?.phoneNumber
+                                ? 'bg-green-600 text-white hover:bg-green-700'
+                                : 'bg-gray-300 text-gray-600 cursor-not-allowed'
+                            }`}
+                          >
+                            {deliveryPartnerDetails[
+                              item.deliveryDetails.find((detail) => detail.acceptedForDelivery)?.deliveryPartnerId || ''
+                            ]?.phoneNumber
+                              ? t('callNow')
+                              : t('numberUnavailable')}
+                          </a>
+                          <button
+                            onClick={() =>
+                              handleOpenChat(
+                                item.deliveryDetails!.find((detail) => detail.acceptedForDelivery)!.deliveryPartnerId,
+                                deliveryPartnerDetails[
+                                  item.deliveryDetails!.find((detail) => detail.acceptedForDelivery)!.deliveryPartnerId
+                                ]?.fullName || 'Delivery Partner'
+                              )
+                            }
+                            className="text-sm font-sans px-3 py-1 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+                          >
+                            <MessageCircle className="h-6 w-6 inline-block" />
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex space-x-2">
-                        <a
-                          href={`tel:${deliveryPartnerDetails[detail.deliveryPartnerId]?.phoneNumber || ''}`}
-                          className={`text-sm font-sans px-3 py-1 rounded-lg ${
-                            deliveryPartnerDetails[detail.deliveryPartnerId]?.phoneNumber
-                              ? 'bg-green-600 text-white hover:bg-green-700'
-                              : 'bg-gray-300 text-gray-600 cursor-not-allowed'
-                          }`}
-                        >
-                          {deliveryPartnerDetails[detail.deliveryPartnerId]?.phoneNumber
-                            ? t('callNow')
-                            : t('numberUnavailable')}
-                        </a>
-                        <button
-                          onClick={() =>
-                            handleOpenChat(
-                              detail.deliveryPartnerId,
-                              deliveryPartnerDetails[detail.deliveryPartnerId]?.fullName || 'Delivery Partner'
-                            )
-                          }
-                          className="text-sm font-sans px-3 py-1 rounded-lg bg-blue-600 text-white font-blue-700"
-                        >
-                          <MessageCircle className="h-4 w-4 inline-block" />
-                        </button>
+                      <div className="mt-4">
+                        <h5 className="text-sm font-semibold text-gray-700 mb-2 font-sans">{t('deliveryStatus')}</h5>
+                        <ul className="text-sm text-gray-600 font-sans space-y-1">
+                          {item.deliveryDetails
+                            .filter((detail) => detail.acceptedForDelivery)
+                            .map((detail, index) => (
+                              <li key={index}>
+                                {detail.onMyWayToFarmer && <span>{t('onMyWayToFarmer')} ✓</span>}
+                                {detail.reachedFarmer && <span>{t('reachedFarmer')} ✓</span>}
+                                {detail.pickedUpOrder && <span>{t('pickedUpOrder')} ✓</span>}
+                                {detail.onMyWayToBuyer && <span>{t('onMyWayToBuyer')} ✓</span>}
+                                {detail.reachedBuyer && <span>{t('reachedBuyer')} ✓</span>}
+                                {detail.deliveredOrder && <span>{t('deliveredOrder')} ✓</span>}
+                              </li>
+                            ))}
+                        </ul>
                       </div>
-                    </div>
-                  ))}
-                  {item.deliveryDetails?.some(detail => detail.acceptedForDelivery) && (
+                    </>
+                  )}
+                  {item.deliveryDetails?.some((detail) => detail.acceptedForDelivery) && (
                     <div className="mt-4 flex space-x-3">
                       <button
                         onClick={() => handleTrackOrder(item)}
@@ -425,17 +515,18 @@ const DeliveryOffers = ({ bidItems, buyerDetails, deliveryPartnerDetails }: Deli
               {t('item', { itemName: ratingItem.itemName })}
             </p>
             <p className="text-sm text-gray-600 mb-4 font-sans">
-              {t('deliveryPartner', { 
-                partnerName: deliveryPartnerDetails[ratingItem.deliveryDetails?.find(detail => detail.acceptedForDelivery)?.deliveryPartnerId || '']?.fullName || 'Loading...'
+              {t('deliveryPartner', {
+                partnerName:
+                  deliveryPartnerDetails[
+                    ratingItem.deliveryDetails?.find((detail) => detail.acceptedForDelivery)?.deliveryPartnerId || ''
+                  ]?.fullName || 'Loading...',
               })}
             </p>
             <div className="flex items-center mb-4">
               {[1, 2, 3, 4, 5].map((star) => (
                 <FaStar
                   key={star}
-                  className={`h-6 w-6 cursor-pointer ${
-                    star <= rating ? 'text-yellow-400' : 'text-gray-300'
-                  }`}
+                  className={`h-6 w-6 cursor-pointer ${star <= rating ? 'text-yellow-400' : 'text-gray-300'}`}
                   onClick={() => setRating(star)}
                 />
               ))}
@@ -483,7 +574,7 @@ const DeliveryOffers = ({ bidItems, buyerDetails, deliveryPartnerDetails }: Deli
             `}</style>
             <button
               onClick={closeChatModal}
-              className="absolute top-4 right-4-gray-600 hover:text-gray-800 font-sans"
+              className="absolute top-4 right-4 text-gray-600 hover:text-gray-800 font-sans"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />

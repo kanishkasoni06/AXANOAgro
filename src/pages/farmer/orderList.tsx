@@ -2,8 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { collection, onSnapshot, query, where, updateDoc, doc, getDoc, Timestamp } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import { useAuth } from '../../context/authContext';
-import { FaClock, FaCheckCircle, FaMapMarkerAlt, FaUser, FaInfoCircle, FaTimes } from 'react-icons/fa';
-
+import { FaClock, FaCheckCircle, FaMapMarkerAlt, FaUser, FaInfoCircle, FaTimes, FaDollarSign } from 'react-icons/fa';
 
 interface OrderItem {
   id: string;
@@ -17,6 +16,13 @@ interface DeliveryPartner {
   name: string;
   amount?: number;
   pickupTime?: string;
+}
+
+interface DeliveryBid {
+  deliveryPartnerId: string;
+  amount: number;
+  assignedAt: any;
+  partnerName?: string;
 }
 
 interface Order {
@@ -44,6 +50,7 @@ interface Order {
     deliveredOrder?: boolean;
     assignedAt?: any;
   };
+  deliveryBids?: DeliveryBid[];
   placedDate?: Date;
   acceptedDate?: Date;
   readyDate?: Date;
@@ -63,6 +70,7 @@ const OrdersList: React.FC = () => {
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState<boolean>(false);
   const [isTrackingModalOpen, setIsTrackingModalOpen] = useState<boolean>(false);
   const [isDeliveryModalOpen, setIsDeliveryModalOpen] = useState<boolean>(false);
+  const [isBidsModalOpen, setIsBidsModalOpen] = useState<boolean>(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [editPrepTime, setEditPrepTime] = useState<{ [orderId: string]: boolean }>({});
   const [prepTimeInputs, setPrepTimeInputs] = useState<{ [orderId: string]: number }>({});
@@ -75,6 +83,7 @@ const OrdersList: React.FC = () => {
   const detailsModalRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>;
   const trackingModalRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>;
   const deliveryModalRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>;
+  const bidsModalRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>;
 
   const focusModal = useCallback((modalRef: React.RefObject<HTMLDivElement>) => {
     if (modalRef.current) {
@@ -113,6 +122,7 @@ const OrdersList: React.FC = () => {
 
     try {
       await updateDoc(doc(db, 'orders', orderId), {
+        status: 'preparing',
         prepTime,
       });
       setTimers((prev) => ({ ...prev, [orderId]: prepTime * 60 }));
@@ -152,6 +162,37 @@ const OrdersList: React.FC = () => {
     setIsDeliveryModalOpen(true);
   };
 
+  const handleViewBids = (order: Order) => {
+    setSelectedOrder(order);
+    setIsBidsModalOpen(true);
+  };
+
+  const handleAcceptBid = async (orderId: string, bid: DeliveryBid) => {
+    try {
+      const orderRef = doc(db, 'orders', orderId);
+      await updateDoc(orderRef, {
+        deliveryDetails: {
+          deliveryPartnerId: bid.deliveryPartnerId,
+          amount: bid.amount,
+          acceptedForDelivery: true,
+          pickedUpOrder: false,
+          onMyWayToBuyer: false,
+          onMyWayToFarmer: true,
+          reachedBuyer: false,
+          reachedFarmer: false,
+          deliveredOrder: false,
+          assignedAt: Timestamp.fromDate(new Date()),
+          lockedAt: Timestamp.fromDate(new Date()),
+        },
+      });
+      setIsBidsModalOpen(false);
+      alert('Bid accepted successfully!');
+    } catch (err: any) {
+      console.error('Error accepting bid:', err.message);
+      setError('Failed to accept bid. Please try again.');
+    }
+  };
+
   const closeDetailsModal = () => {
     setIsDetailsModalOpen(false);
     setSelectedOrder(null);
@@ -164,6 +205,11 @@ const OrdersList: React.FC = () => {
 
   const closeDeliveryModal = () => {
     setIsDeliveryModalOpen(false);
+    setSelectedOrder(null);
+  };
+
+  const closeBidsModal = () => {
+    setIsBidsModalOpen(false);
     setSelectedOrder(null);
   };
 
@@ -211,7 +257,7 @@ const OrdersList: React.FC = () => {
       return;
     }
 
-    const farmerUserId = user.uid;
+    const farmerUid = user.uid;
     setLoading(true);
     setError(null);
 
@@ -239,7 +285,7 @@ const OrdersList: React.FC = () => {
             for (const itemId of itemIds) {
               try {
                 const itemDoc = await getDoc(doc(db, 'items', itemId));
-                if (itemDoc.exists() && itemDoc.data().ownerUserId === farmerUserId) {
+                if (itemDoc.exists() && itemDoc.data().ownerUserId === farmerUid) {
                   isFarmerOrder = true;
                   break;
                 }
@@ -276,6 +322,26 @@ const OrdersList: React.FC = () => {
           }
         });
         await Promise.all(buyerPromises);
+
+        const deliveryPartnerPromises = validOrders
+          .filter((order) => order.deliveryBids && Array.isArray(order.deliveryBids))
+          .flatMap((order) =>
+            order.deliveryBids.map(async (bid: DeliveryBid) => {
+              try {
+                const dpDoc = await getDoc(doc(db, 'deliveryPartner', bid.deliveryPartnerId));
+                if (dpDoc.exists()) {
+                  const dpData = dpDoc.data();
+                  bid.partnerName = dpData.fullName || bid.deliveryPartnerId;
+                } else {
+                  bid.partnerName = bid.deliveryPartnerId;
+                }
+              } catch (err) {
+                console.error(`Error fetching delivery partner ${bid.deliveryPartnerId}:`, err);
+                bid.partnerName = bid.deliveryPartnerId;
+              }
+            })
+          );
+        await Promise.all(deliveryPartnerPromises);
 
         const ordersRaw = await Promise.all(
           validOrders.map(async (order) => {
@@ -347,6 +413,7 @@ const OrdersList: React.FC = () => {
               deliveryAddress: order.deliveryAddress,
               prepTime: order.prepTime,
               deliveryDetails: delivery,
+              deliveryBids: order.deliveryBids || [],
             };
           })
         );
@@ -425,12 +492,12 @@ const OrdersList: React.FC = () => {
     return () => clearInterval(interval);
   }, [orders]);
 
-  // Focus modal when it opens
   useEffect(() => {
     if (isDetailsModalOpen) focusModal(detailsModalRef);
     if (isTrackingModalOpen) focusModal(trackingModalRef);
     if (isDeliveryModalOpen) focusModal(deliveryModalRef);
-  }, [isDetailsModalOpen, isTrackingModalOpen, isDeliveryModalOpen, focusModal]);
+    if (isBidsModalOpen) focusModal(bidsModalRef);
+  }, [isDetailsModalOpen, isTrackingModalOpen, isDeliveryModalOpen, isBidsModalOpen, focusModal]);
 
   if (error) {
     return (
@@ -448,19 +515,18 @@ const OrdersList: React.FC = () => {
     );
   }
 
-  const filteredOrders = orders
-    .filter((order) => {
-      if (activeTab === 'preparing') {
-        return order.status === 'preparing' && order.acceptedTime;
-      }
-      if (activeTab === 'ready') {
-        return order.status === 'ready';
-      }
-      if (activeTab === 'pickedUp') {
-        return ['pickedUp', 'Delivered'].includes(order.status);
-      }
-      return false;
-    })
+  const filteredOrders = orders.filter((order) => {
+    if (activeTab === 'preparing') {
+      return order.status==='accepted' || order.status === 'preparing' && order.acceptedTime;
+    }
+    if (activeTab === 'ready') {
+      return order.status === 'ready';
+    }
+    if (activeTab === 'pickedUp') {
+      return ['pickedUp', 'Delivered'].includes(order.status);
+    }
+    return false;
+  });
 
   const getProgressPercentage = (status: Order['status']): number => {
     switch (status) {
@@ -506,10 +572,7 @@ const OrdersList: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-     
-      {/* Main Content */}
       <main>
-        {/* Tabs */}
         <div className="flex flex-wrap gap-2 mb-6 border-b border-gray-200 overflow-x-auto">
           {(['preparing', 'ready', 'pickedUp'] as const).map((tab) => (
             <button
@@ -525,15 +588,16 @@ const OrdersList: React.FC = () => {
             >
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
               <span className="ml-2 px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800">
-                {tab === 'pickedUp'
-                  ? orders.filter((o) => ['pickedUp', 'Delivered'].includes(o.status)).length
-                  : orders.filter((o) => o.status === tab).length}
+               {tab === 'preparing'
+          ? orders.filter((o) => ['accepted', 'preparing'].includes(o.status)).length
+          : tab === 'pickedUp'
+          ? orders.filter((o) => ['pickedUp', 'Delivered'].includes(o.status)).length
+          : orders.filter((o) => o.status === tab).length}
               </span>
             </button>
           ))}
         </div>
 
-        {/* Orders List */}
         <div className="space-y-6">
           {filteredOrders.length === 0 && (
             <div className="text-center text-gray-500 py-8">
@@ -561,19 +625,12 @@ const OrdersList: React.FC = () => {
                   {order.items.map((item) => (
                     <div key={item.id} className="text-sm text-gray-600">
                       <span className="text-red-500 font-medium">{item.quantity}x </span>
-                      {item.name}{' '}
-                      <span className="font-semibold">₹{item.price}</span>
+                      {item.name} <span className="font-semibold">₹{item.price}</span>
                     </div>
                   ))}
                   <div className="mt-2 font-semibold text-gray-800">
                     Total: ₹{order.totalBill}{' '}
-                    <span
-                      className={
-                        order.paymentMethod === 'PAID'
-                          ? 'text-green-600 text-xs'
-                          : 'text-gray-600 text-xs'
-                      }
-                    >
+                    <span className={order.paymentMethod === 'PAID' ? 'text-green-600 text-xs' : 'text-gray-600 text-xs'}>
                       ({order.paymentMethod})
                     </span>
                   </div>
@@ -583,9 +640,7 @@ const OrdersList: React.FC = () => {
               <div className="mb-4">
                 <div className="flex justify-between items-center text-sm text-gray-600 mb-2">
                   <span>Order Progress</span>
-                  <span className="text-green-600 font-medium">
-                    {getProgressPercentage(order.status)}%
-                  </span>
+                  <span className="text-green-600 font-medium">{getProgressPercentage(order.status)}%</span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">
                   <div
@@ -612,20 +667,13 @@ const OrdersList: React.FC = () => {
 
               <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
                 <div className="flex flex-col sm:flex-row flex-wrap gap-2 w-full sm:w-auto">
-                  {order.status === 'preparing' && (
+                    {order.status === 'accepted'  && (
                     <>
                       {!editPrepTime[order.id] ? (
                         <div className="flex flex-col sm:flex-row gap-2">
+                          
                           <button
-                            onClick={() => handleReadyOrder(order.id)}
-                            className="bg-green-600 text-white px-4 py-2 rounded-lg shadow-sm hover:bg-green-700 transition-colors text-sm min-w-[120px]"
-                          >
-                            Mark as Ready
-                          </button>
-                          <button
-                            onClick={() =>
-                              setEditPrepTime((prev) => ({ ...prev, [order.id]: true }))
-                            }
+                            onClick={() => setEditPrepTime((prev) => ({ ...prev, [order.id]: true }))}
                             className="bg-yellow-500 text-white px-4 py-2 rounded-lg shadow-sm hover:bg-yellow-600 transition-colors text-sm min-w-[120px]"
                           >
                             Update Prep Time
@@ -667,9 +715,70 @@ const OrdersList: React.FC = () => {
                             Save
                           </button>
                           <button
-                            onClick={() =>
-                              setEditPrepTime((prev) => ({ ...prev, [order.id]: false }))
+                            onClick={() => setEditPrepTime((prev) => ({ ...prev, [order.id]: false }))}
+                            className="bg-gray-400 text-white px-4 py-2 rounded-lg shadow-sm hover:bg-gray-500 transition-colors text-sm min-w-[80px]"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                  {order.status === 'preparing'  && (
+                    <>
+                      {!editPrepTime[order.id] ? (
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <button
+                            onClick={() => handleReadyOrder(order.id)}
+                            className="bg-green-600 text-white px-4 py-2 rounded-lg shadow-sm hover:bg-green-700 transition-colors text-sm min-w-[120px]"
+                          >
+                            Mark as Ready
+                          </button>
+                          
+                          <button
+                            onClick={() => setEditPrepTime((prev) => ({ ...prev, [order.id]: true }))}
+                            className="bg-yellow-500 text-white px-4 py-2 rounded-lg shadow-sm hover:bg-yellow-600 transition-colors text-sm min-w-[120px]"
+                          >
+                            Update Prep Time
+                          </button>
+                          <button
+                            onClick={() => handleTrackOrder(order)}
+                            className="bg-blue-500 text-white px-4 py-2 rounded-lg shadow-sm hover:bg-blue-600 transition-colors flex items-center text-sm min-w-[120px]"
+                          >
+                            <FaClock className="mr-2" />
+                            Track Order
+                          </button>
+                          <button
+                            onClick={() => handleViewDetails(order)}
+                            className="bg-gray-500 text-white px-4 py-2 rounded-lg shadow-sm hover:bg-gray-600 transition-colors flex items-center text-sm min-w-[120px]"
+                          >
+                            <FaInfoCircle className="mr-2" />
+                            View Details
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <input
+                            type="number"
+                            placeholder="Prep time (mins)"
+                            className="p-2 border border-gray-200 rounded-lg w-32 focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                            value={prepTimeInputs[order.id] || order.prepTime || ''}
+                            onChange={(e) =>
+                              setPrepTimeInputs((prev) => ({
+                                ...prev,
+                                [order.id]: parseInt(e.target.value) || 0,
+                              }))
                             }
+                            aria-label="Preparation time in minutes"
+                          />
+                          <button
+                            onClick={() => handleUpdatePrepTime(order.id)}
+                            className="bg-green-600 text-white px-4 py-2 rounded-lg shadow-sm hover:bg-green-700 transition-colors text-sm min-w-[80px]"
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={() => setEditPrepTime((prev) => ({ ...prev, [order.id]: false }))}
                             className="bg-gray-400 text-white px-4 py-2 rounded-lg shadow-sm hover:bg-gray-500 transition-colors text-sm min-w-[80px]"
                           >
                             Cancel
@@ -706,9 +815,26 @@ const OrdersList: React.FC = () => {
                         </>
                       ) : (
                         <>
-                          <div className="text-sm text-yellow-600 self-start sm:self-center">
-                            Finding a Driver...
-                          </div>
+                          {order.deliveryBids && order.deliveryBids.length > 0 ? (
+                            <button
+                              onClick={() => handleViewBids(order)}
+                              className="bg-teal-500 text-white px-4 py-2 rounded-lg shadow-sm hover:bg-teal-600 transition-colors flex items-center text-sm min-w-[120px]"
+                            >
+                              <FaDollarSign className="mr-2" />
+                              View Bids ({order.deliveryBids.length})
+                            </button>
+                          ) : (
+                            <div className="text-sm text-yellow-600 self-start sm:self-center">
+                              Finding a Delivery Partner...
+                            </div>
+                          )}
+                          <button
+                            onClick={() => handleTrackOrder(order)}
+                            className="bg-blue-500 text-white px-4 py-2 rounded-lg shadow-sm hover:bg-blue-600 transition-colors flex items-center text-sm min-w-[120px]"
+                          >
+                            <FaClock className="mr-2" />
+                            Track Order
+                          </button>
                           <button
                             onClick={() => handleViewDetails(order)}
                             className="bg-gray-500 text-white px-4 py-2 rounded-lg shadow-sm hover:bg-gray-600 transition-colors flex items-center text-sm min-w-[120px]"
@@ -745,12 +871,7 @@ const OrdersList: React.FC = () => {
                 </div>
                 <div className="flex flex-col gap-2 w-full sm:w-auto">
                   <button
-                    onClick={() =>
-                      setShowAddress((prev) => ({
-                        ...prev,
-                        [order.id]: !prev[order.id],
-                      }))
-                    }
+                    onClick={() => setShowAddress((prev) => ({ ...prev, [order.id]: !prev[order.id] }))}
                     className="text-gray-600 flex items-center text-sm hover:text-gray-800"
                     aria-expanded={showAddress[order.id]}
                     aria-controls={`address-${order.id}`}
@@ -797,12 +918,10 @@ const OrdersList: React.FC = () => {
               </div>
               <div className="space-y-4 text-gray-600">
                 <p>
-                  <strong className="font-semibold">Order ID:</strong>{' '}
-                  {selectedOrder.id}
+                  <strong className="font-semibold">Order ID:</strong> {selectedOrder.id}
                 </p>
                 <p>
-                  <strong className="font-semibold">Customer Name:</strong>{' '}
-                  {selectedOrder.customerName}
+                  <strong className="font-semibold">Customer Name:</strong> {selectedOrder.customerName}
                 </p>
                 <p>
                   <strong className="font-semibold">Items:</strong>
@@ -815,21 +934,17 @@ const OrdersList: React.FC = () => {
                   ))}
                 </ul>
                 <p>
-                  <strong className="font-semibold">Total Bill:</strong> ₹
-                  {selectedOrder.totalBill} ({selectedOrder.paymentMethod})
+                  <strong className="font-semibold">Total Bill:</strong> ₹{selectedOrder.totalBill} ({selectedOrder.paymentMethod})
                 </p>
                 <p>
-                  <strong className="font-semibold">Delivery Address:</strong>{' '}
-                  {selectedOrder.deliveryAddress || 'N/A'}
+                  <strong className="font-semibold">Delivery Address:</strong> {selectedOrder.deliveryAddress || 'N/A'}
                 </p>
                 <p>
-                  <strong className="font-semibold">Placed At:</strong>{' '}
-                  {selectedOrder.placedTime}
+                  <strong className="font-semibold">Placed At:</strong> {selectedOrder.placedTime}
                 </p>
                 {selectedOrder.acceptedTime && (
                   <p>
-                    <strong className="font-semibold">Accepted At:</strong>{' '}
-                    {selectedOrder.acceptedTime}
+                    <strong className="font-semibold">Accepted At:</strong> {selectedOrder.acceptedTime}
                   </p>
                 )}
               </div>
@@ -946,16 +1061,13 @@ const OrdersList: React.FC = () => {
               </div>
               <div className="space-y-4 text-gray-600">
                 <p>
-                  <strong className="font-semibold">Name:</strong>{' '}
-                  {selectedOrder.deliveryPartner.name}
+                  <strong className="font-semibold">Name:</strong> {selectedOrder.deliveryPartner.name}
                 </p>
                 <p>
-                  <strong className="font-semibold">Amount:</strong> ₹
-                  {selectedOrder.deliveryPartner.amount || 'N/A'}
+                  <strong className="font-semibold">Amount:</strong> ₹{selectedOrder.deliveryPartner.amount || 'N/A'}
                 </p>
                 <p>
-                  <strong className="font-semibold">Pickup Time:</strong>{' '}
-                  {selectedOrder.deliveryPartner.pickupTime || 'Not yet picked up'}
+                  <strong className="font-semibold">Pickup Time:</strong> {selectedOrder.deliveryPartner.pickupTime || 'Not yet picked up'}
                 </p>
               </div>
               <button
@@ -964,6 +1076,70 @@ const OrdersList: React.FC = () => {
               >
                 Close
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* Bids Modal */}
+        {isBidsModalOpen && selectedOrder && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div
+              ref={bidsModalRef}
+              className="bg-white p-6 rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto focus:outline-none"
+              tabIndex={0}
+              role="dialog"
+              aria-labelledby="bids-modal-title"
+              onKeyUp={(e) => {
+                if (e.key === 'Escape') closeBidsModal();
+              }}
+            >
+              <div className="flex justify-between items-center mb-4">
+                <h2 id="bids-modal-title" className="text-xl font-semibold text-gray-800">
+                  Delivery Bids for Order ID: {selectedOrder.id}
+                </h2>
+                <button
+                  onClick={closeBidsModal}
+                  className="text-gray-600 hover:text-gray-800 p-1"
+                  aria-label="Close bids modal"
+                >
+                  <FaTimes className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="space-y-4">
+                {selectedOrder.deliveryBids && selectedOrder?.deliveryBids.length > 0 ? (
+                  <ul className="space-y-3">
+                    {selectedOrder.deliveryBids.map((bid) => (
+                      <li
+                        key={bid.deliveryPartnerId}
+                        className="flex justify-between items-center p-4 bg-gray-50 border border-gray-200 rounded-lg"
+                      >
+                        <div>
+                          <p className="font-medium text-gray-800">{bid.partnerName || 'Unknown Partner'}</p>
+                          <p className="text-sm text-gray-600">Bid Amount: ₹{bid.amount}</p>
+                          <p className="text-sm text-gray-500">
+                            Bid Placed: {parseDate(bid.assignedAt)?.toLocaleString() || 'N/A'}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleAcceptBid(selectedOrder.id, bid)}
+                          className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors text-sm"
+                          disabled={!!selectedOrder.deliveryDetails?.deliveryPartnerId}
+                        >
+                          Accept
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-center text-gray-600">No bids available yet.</p>
+                )}
+                <button
+                  onClick={closeBidsModal}
+                  className="mt-6 w-full bg-green-600 text-white px-4 py-2 rounded-lg shadow-sm hover:bg-green-700 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         )}

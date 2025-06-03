@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { collection, addDoc, query, where, onSnapshot } from 'firebase/firestore';
 import { db, auth } from '../../firebase/firebase';
 import { Button } from '../../components/ui/button';
-import { FaPlus, FaTrash, FaCamera, FaCheckCircle, FaHandshake } from 'react-icons/fa';
+import { FaPlus, FaCheckCircle, FaHandshake } from 'react-icons/fa';
 import { LayoutDashboard, Leaf, ListCheckIcon, Loader2, LucideSprout, Settings } from 'lucide-react';
 import { useAuth } from '../../context/authContext';
 import Sidebar from '../../components/ui/sidebar';
@@ -40,8 +40,6 @@ const AddProductForm = () => {
   const [itemType, setItemType] = useState('');
   const [category, setCategory] = useState('');
   const [imageUrls, setImageUrls] = useState<string[]>(['']);
-  const [productImages, setProductImages] = useState<File[]>([]);
-  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +55,12 @@ const AddProductForm = () => {
     t('productTypes.poultry'),
     t('productTypes.seafood'),
     t('productTypes.herbs'),
-    t('productTypes.other')
+    t('productTypes.other'),
+  ];
+
+  const categoryOptions = [
+    { value: 'Organic', label: t('organic') },
+    { value: 'Premium', label: t('premium') },
   ];
 
   // Fetch existing products
@@ -92,90 +95,9 @@ const AddProductForm = () => {
 
   // Calculate form completion progress
   const requiredFields = [itemName, itemDescription, price, stock, itemType];
-  const filledFields = requiredFields.filter(field => field !== '').length;
+  const filledFields = requiredFields.filter((field) => field !== '').length;
   const totalFields = requiredFields.length;
   const progress = (filledFields / totalFields) * 100;
-
-  const convertToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = (error) => reject(error);
-      reader.readAsDataURL(file);
-    });
-  };
-
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
-
-    const newFiles = Array.from(files);
-
-    // Validate total images (max 5)
-    if (newFiles.length + productImages.length > 5) {
-      setFormError(t('error.maxImages'));
-      return;
-    }
-
-    // Validate file size (max 200KB per image)
-    for (const file of newFiles) {
-      if (file.size > 200 * 1024) {
-        setFormError(t('error.imageSizeLimit'));
-        return;
-      }
-    }
-
-    setProductImages((prev) => [...prev, ...newFiles]);
-
-    // Create previews
-    const newPreviews = newFiles.map((file) => URL.createObjectURL(file));
-    setImagePreviews((prev) => [...prev, ...newPreviews]);
-  };
-
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    const files = e.dataTransfer.files;
-    if (!files) return;
-
-    const newFiles = Array.from(files);
-
-    // Validate total images (max 5)
-    if (newFiles.length + productImages.length > 5) {
-      setFormError(t('error.maxImages'));
-      return;
-    }
-
-    // Validate file size (max 200KB per image)
-    for (const file of newFiles) {
-      if (file.size > 200 * 1024) {
-        setFormError(t('error.imageSizeLimit'));
-        return;
-      }
-    }
-
-    setProductImages((prev) => [...prev, ...newFiles]);
-
-    // Create previews
-    const newPreviews = newFiles.map((file) => URL.createObjectURL(file));
-    setImagePreviews((prev) => [...prev, ...newPreviews]);
-  };
-
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-  };
-
-  const removeImage = (index: number) => {
-    const newImages = [...productImages];
-    const newPreviews = [...imagePreviews];
-
-    newImages.splice(index, 1);
-    newPreviews.splice(index, 1);
-
-    setProductImages(newImages);
-    setImagePreviews(newPreviews);
-
-    URL.revokeObjectURL(imagePreviews[index]);
-  };
 
   const handleAddImageField = () => {
     setImageUrls([...imageUrls, '']);
@@ -188,14 +110,7 @@ const AddProductForm = () => {
   };
 
   const handleSubmit = () => {
-    if (
-      !itemName ||
-      !itemDescription ||
-      !price ||
-      !stock ||
-      !itemType ||
-      (productImages.length === 0 && imageUrls.every((url) => !url))
-    ) {
+    if (!itemName || !itemDescription || !price || !stock || !itemType) {
       setFormError(t('error.requiredFields'));
       return;
     }
@@ -219,6 +134,11 @@ const AddProductForm = () => {
       return;
     }
 
+    if (imageUrls.every((url) => !url.trim())) {
+      setFormError(t('error.noImages'));
+      return;
+    }
+
     setShowConfirmation(true);
   };
 
@@ -231,16 +151,10 @@ const AddProductForm = () => {
         throw new Error('User not authenticated');
       }
 
-      // Convert uploaded images to base64
-      const uploadedImageUrls = await Promise.all(
-        productImages.map(async (file) => await convertToBase64(file))
-      );
-
-      // Combine uploaded images with manually entered URLs
+      // Filter out empty image URLs
       const filteredImageUrls = imageUrls.filter((url) => url.trim() !== '');
-      const allImageUrls = [...uploadedImageUrls, ...filteredImageUrls];
 
-      if (allImageUrls.length === 0) {
+      if (filteredImageUrls.length === 0) {
         setFormError(t('error.noImages'));
         setLoading(false);
         return;
@@ -256,7 +170,7 @@ const AddProductForm = () => {
         stock: parseInt(stock),
         itemType,
         category: category || null,
-        imageUrls: allImageUrls,
+        imageUrls: filteredImageUrls,
         status: t('status.active'),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -273,8 +187,6 @@ const AddProductForm = () => {
       setItemType('');
       setCategory('');
       setImageUrls(['']);
-      setProductImages([]);
-      setImagePreviews([]);
       setIsModalOpen(false);
       setShowConfirmation(false);
       alert(t('success.productAdded'));
@@ -310,33 +222,33 @@ const AddProductForm = () => {
     return [
       {
         label: t('dashboard'),
-        onClick: () => navigate("/farmer/homePage"),
-        icon: <LayoutDashboard className="text-white" />
+        onClick: () => navigate('/farmer/homePage'),
+        icon: <LayoutDashboard className="text-white" />,
       },
       {
         label: t('addProduct'),
-        onClick: () => navigate("/farmer/add-product"),
-        icon: <LucideSprout className="text-white" />
+        onClick: () => navigate('/farmer/add-product'),
+        icon: <LucideSprout className="text-white" />,
       },
       {
         label: t('orders'),
-        onClick: () => navigate("/farmer/orders"),
-        icon: <ListCheckIcon className="text-white" />
+        onClick: () => navigate('/farmer/orders'),
+        icon: <ListCheckIcon className="text-white" />,
       },
       {
         label: t('biding'),
-        onClick: () => navigate("/farmer/biding"),
-        icon: <FaHandshake className="text-white" />
+        onClick: () => navigate('/farmer/biding'),
+        icon: <FaHandshake className="text-white" />,
       },
       {
         label: t('advisory'),
-        onClick: () => navigate("/farmer/advisory"),
-        icon: <Leaf className="text-white" />
+        onClick: () => navigate('/farmer/advisory'),
+        icon: <Leaf className="text-white" />,
       },
       {
         label: t('settings'),
-        onClick: () => navigate("/farmer/settings"),
-        icon: <Settings className="text-white" />
+        onClick: () => navigate('/farmer/settings'),
+        icon: <Settings className="text-white" />,
       },
     ];
   };
@@ -348,9 +260,7 @@ const AddProductForm = () => {
         {/* Header Section */}
         <div className="flex justify-between items-center mb-8">
           <div className="flex items-center">
-            <h1 className="text-3xl font-bold text-gray-800">
-              {t('addNewProduct')}
-            </h1>
+            <h1 className="text-3xl font-bold text-gray-800">{t('addNewProduct')}</h1>
           </div>
           <Button
             onClick={() => setIsModalOpen(true)}
@@ -467,7 +377,10 @@ const AddProductForm = () => {
                           {t('placeholder.selectProductType')}
                         </option>
                         {productTypes.map((type, index) => (
-                          <option key={index} value={Object.values(t('productTypes', { returnObjects: true }))[index]}>
+                          <option
+                            key={index}
+                            value={Object.values(t('productTypes', { returnObjects: true }))[index]}
+                          >
                             {type}
                           </option>
                         ))}
@@ -477,66 +390,22 @@ const AddProductForm = () => {
                       <label className="block text-sm font-medium text-gray-700 font-sans mb-1">
                         {t('category')} ({t('optional')})
                       </label>
-                      <input
-                        type="text"
+                      <select
                         value={category}
                         onChange={(e) => setCategory(e.target.value)}
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2CD14D] focus:border-transparent font-sans"
-                        placeholder={t('placeholder.category')}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 font-sans mb-1">
-                        {t('productImages')} <span className="text-red-500">*</span>
-                        <span className="ml-2 text-xs text-gray-500">{t('imageConstraints')}</span>
-                      </label>
-                      <div
-                        onDrop={handleDrop}
-                        onDragOver={handleDragOver}
-                        className="w-full p-6 border-2 border-dashed border-gray-300 rounded-lg text-center bg-gray-50 hover:bg-gray-100 transition-colors duration-200"
                       >
-                        <FaCamera className="mx-auto h-8 w-8 text-gray-400 mb-2" />
-                        <p className="text-sm text-gray-600 font-sans mb-2">
-                          {t('dragDropImages')}
-                        </p>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={handleImageUpload}
-                          multiple
-                          className="hidden"
-                          id="image-upload"
-                        />
-                        <label
-                          htmlFor="image-upload"
-                          className="cursor-pointer text-sm font-medium text-[#2CD14D] hover:text-[#24B042] font-sans"
-                        >
-                          {t('uploadImages')}
-                        </label>
-                      </div>
-                      {imagePreviews.length > 0 && (
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-4">
-                          {imagePreviews.map((preview, index) => (
-                            <div key={index} className="relative">
-                              <img
-                                src={preview}
-                                alt={t('productPreview')}
-                                className="w-full h-24 object-cover rounded-lg shadow-sm"
-                              />
-                              <button
-                                onClick={() => removeImage(index)}
-                                className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors duration-200"
-                              >
-                                <FaTrash className="h-4 w-4" />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                        <option value="">{t('selectCategory')}</option>
+                        {categoryOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 font-sans mb-1">
-                        {t('imageUrls')} ({t('optional')})
+                        {t('imageUrls')} <span className="text-red-500">*</span>
                       </label>
                       {imageUrls.map((url, index) => (
                         <div key={index} className="flex items-center space-x-2 mt-2">
@@ -617,20 +486,12 @@ const AddProductForm = () => {
                         <p className="text-gray-700 font-sans">{category}</p>
                       </div>
                     )}
-                    {(imagePreviews.length > 0 || imageUrls.some(url => url)) && (
+                    {imageUrls.some((url) => url.trim() !== '') && (
                       <div>
                         <span className="text-sm font-medium text-gray-600 font-sans">{t('images')}:</span>
                         <div className="grid grid-cols-3 gap-2 mt-2">
-                          {imagePreviews.map((preview, index) => (
-                            <img
-                              key={`preview-${index}`}
-                              src={preview}
-                              alt={t('productPreview')}
-                              className="w-full h-20 object-cover rounded-lg"
-                            />
-                          ))}
                           {imageUrls
-                            .filter(url => url.trim() !== '')
+                            .filter((url) => url.trim() !== '')
                             .map((url, index) => (
                               <img
                                 key={`url-${index}`}

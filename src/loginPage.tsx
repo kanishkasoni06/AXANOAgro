@@ -214,7 +214,7 @@ const LoginPage = () => {
               Role
             </label>
             <div className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100 text-gray-700 sm:text-sm">
-              {role ? role.charAt(0).toUpperCase() + role.slice(1) : 'Farmer/Delivery Partner/Buyer/Admin'}
+              {role ? role.charAt(0).toUpperCase() + role.slice(1) : 'Farmer/Delivery Partner/Buyer'}
             </div>
           </div>
 
