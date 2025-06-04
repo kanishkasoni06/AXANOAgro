@@ -1,5 +1,6 @@
 import { Button } from '../ui/button';
 import { useCart } from '../../context/CartContext';
+import { toast } from 'react-hot-toast';
 
 interface ProductCardProps {
   itemId: string;
@@ -25,15 +26,13 @@ function ProductCard({
   const { addToCart } = useCart();
 
   const handleAddToCart = () => {
-    addToCart({
-      id: itemId,
-      name: itemName,
-      price: parseFloat(price),
-      imageUrl: imageUrls[0] || 'https://via.placeholder.com/150',
-      description: itemDescription,
-      discountPrice: discountPrice ? parseFloat(discountPrice) : undefined,
-      farmerName,
-    });
+    try {
+      addToCart({ id: itemId }); // Only pass the 'id' as expected by CartContext
+      toast.success(`${itemName} added to cart!`); // Use itemName for user feedback
+    } catch (error) {
+      console.error('Error adding item to cart:', error);
+      toast.error('Failed to add item to cart.');
+    }
   };
 
   return (
