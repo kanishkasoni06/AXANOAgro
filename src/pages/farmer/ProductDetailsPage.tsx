@@ -176,8 +176,8 @@ const ProductDetailsPage = () => {
     );
   }
 
-  const isProductItem = (item: Item): item is ProductItem => itemType === 'product';
-  const isBidItem = (item: Item): item is BidItem => itemType === 'bid';
+  const isProductItem = () => itemType === 'product';
+  const isBidItem = () => itemType === 'bid';
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -192,12 +192,12 @@ const ProductDetailsPage = () => {
               aria-label={t('back')}
             >
               <FaAngleLeft className="h-4 w-4 mr-2" />
-              <span>{t('back')}</span>
+              
             </Button>
           </div>
 
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 font-serif mb-6">
-            {t('productDetails')}
+            {t('Product Details')}
           </h1>
 
           <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
@@ -233,108 +233,95 @@ const ProductDetailsPage = () => {
                   <span className="text-sm font-medium text-gray-600">{t('productName')}:</span>
                   <p className="text-base text-gray-800">{item.itemName}</p>
                 </div>
-                {isProductItem(item) && (
+                {isProductItem() && (
                   <>
                     <div>
                       <span className="text-sm font-medium text-gray-600">{t('description')}:</span>
-                      <p className="text-base text-gray-700">{item.itemDescription}</p>
+                      <p className="text-base text-gray-700">{(item as ProductItem).itemDescription}</p>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <span className="text-sm font-medium text-gray-600">{t('price')}:</span>
-                        <p className="text-base text-gray-800">₹{item.price}</p>
+                        <p className="text-base text-gray-800">₹{(item as ProductItem).price}</p>
                       </div>
                       <div>
                         <span className="text-sm font-medium text-gray-600">{t('discountPrice')}:</span>
                         <p className="text-base text-gray-800">
-                          {item.discountPrice ? `₹${item.discountPrice}` : t('na')}
+                          {(item as ProductItem).discountPrice ? `₹${(item as ProductItem).discountPrice}` : t('na')}
                         </p>
                       </div>
                     </div>
                     <div>
                       <span className="text-sm font-medium text-gray-600">{t('stock')}:</span>
-                      <p className="text-base text-gray-800">{item.stock} {t('units')}</p>
+                      <p className="text-base text-gray-800">{(item as ProductItem).stock} {t('units')}</p>
                     </div>
                     <div>
                       <span className="text-sm font-medium text-gray-600">{t('productType')}:</span>
-                      <p className="text-base text-gray-800">{item.itemType}</p>
+                      <p className="text-base text-gray-800">{(item as ProductItem).itemType}</p>
                     </div>
-                    {item.category && (
+                    {(item as ProductItem).category && (
                       <div>
                         <span className="text-sm font-medium text-gray-600">{t('category')}:</span>
-                        <p className="text-base text-gray-800">{item.category}</p>
+                        <p className="text-base text-gray-800">{(item as ProductItem).category}</p>
                       </div>
                     )}
                     <div>
-                      <span className="text-sm font-medium text-gray-600">{t('status')}:</span>
-                      <p className="text-base text-gray-800">{item.status}</p>
-                    </div>
-                    <div>
-                      <span className="text-sm font-medium text-gray-600">{t('createdAt')}:</span>
-                      <p className="text-base text-gray-800">
-                        {new Date(item.createdAt).toLocaleString()}
-                      </p>
-                    </div>
-                    <div>
                       <span className="text-sm font-medium text-gray-600">{t('updatedAt')}:</span>
                       <p className="text-base text-gray-800">
-                        {new Date(item.updatedAt).toLocaleString()}
+                        {new Date((item as ProductItem).updatedAt).toLocaleString()}
                       </p>
                     </div>
                     <div>
                       <span className="text-sm font-medium text-gray-600">{t('totalSales')}:</span>
-                      <p className="text-base text-gray-800">{item.totalSales} {t('units')}</p>
+                      <p className="text-base text-gray-800">{(item as ProductItem).totalSales} {t('units')}</p>
                     </div>
                     <div>
                       <span className="text-sm font-medium text-gray-600">{t('ratings')}:</span>
                       <p className="text-base text-gray-800">
-                        {item.ratings.length > 0
-                          ? `${item.ratings.length} ${t('ratings')}`
+                        {(item as ProductItem).ratings.length > 0
+                          ? `${(item as ProductItem).ratings.length} ${t('ratings')}`
                           : t('noRatings')}
                       </p>
                     </div>
                   </>
                 )}
-                {isBidItem(item) && (
+                {isBidItem() && (
                   <>
                     <div>
                       <span className="text-sm font-medium text-gray-600">{t('quantity')}:</span>
-                      <p className="text-base text-gray-800">{item.quantity} {t('units')}</p>
+                      <p className="text-base text-gray-800">{(item as BidItem).quantity} {t('units')}</p>
                     </div>
                     <div>
                       <span className="text-sm font-medium text-gray-600">{t('basePrice')}:</span>
-                      <p className="text-base text-gray-800">₹{item.basePrice}</p>
+                      <p className="text-base text-gray-800">₹{(item as BidItem).basePrice}</p>
                     </div>
                     <div>
                       <span className="text-sm font-medium text-gray-600">{t('biddingStartDate')}:</span>
                       <p className="text-base text-gray-800">
-                        {item.biddingStartDate.toDate().toLocaleString()}
+                        {(item as BidItem).biddingStartDate.toDate().toLocaleString()}
                       </p>
                     </div>
                     <div>
                       <span className="text-sm font-medium text-gray-600">{t('biddingEndDate')}:</span>
                       <p className="text-base text-gray-800">
-                        {item.biddingEndDate ? item.biddingEndDate.toDate().toLocaleString() : t('notSet')}
+                        {(item as BidItem).biddingEndDate ? (item as BidItem).biddingEndDate.toDate().toLocaleString() : t('notSet')}
                       </p>
                     </div>
-                    <div>
-                      <span className="text-sm font-medium text-gray-600">{t('status')}:</span>
-                      <p className="text-base text-gray-800">{item.status}</p>
-                    </div>
-                    {item.acceptedBid && (
+                 
+                    {(item as BidItem).acceptedBid && (
                       <div>
                         <span className="text-sm font-medium text-gray-600">{t('acceptedBid')}:</span>
                         <p className="text-base text-gray-800">
-                          ₹{item.acceptedBid.bidAmount} by {item.acceptedBid.buyerId} at{' '}
-                          {item.acceptedBid.acceptedAt.toDate().toLocaleString()}
+                          ₹{(item as BidItem).acceptedBid?.bidAmount} by {(item as BidItem).acceptedBid?.buyerId} at{' '}
+                          {(item as BidItem).acceptedBid?.acceptedAt?.toDate().toLocaleString()}
                         </p>
                       </div>
                     )}
-                    {item.bids && item.bids.length > 0 && (
+                    {((item as BidItem).bids ?? []).length > 0 && (
                       <div>
                         <span className="text-sm font-medium text-gray-600">{t('bids')}:</span>
                         <ul className="mt-2 space-y-2">
-                          {item.bids
+                          {((item as BidItem).bids ?? [])
                             .sort((a, b) => b.timestamp.toDate().getTime() - a.timestamp.toDate().getTime())
                             .map((bid, index) => (
                               <li key={index} className="text-base text-gray-800">
