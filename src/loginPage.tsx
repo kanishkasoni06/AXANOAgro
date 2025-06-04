@@ -117,12 +117,15 @@ const LoginPage = () => {
           collectionName = 'farmer';
           // Check verified status
           const farmerDoc = await getDoc(doc(db, 'farmer', user.uid));
-          const verified = farmerDoc.exists() ? farmerDoc.data().verified : false;
-          dashboardPath = verified ? '/farmer/homePage' : '/KYCVerification';
+          const farmerVerified = farmerDoc.exists() ? farmerDoc.data().verified : false;
+          dashboardPath = farmerVerified ? '/farmer/homePage' : '/KYCVerification';
           break;
         case 'deliveryPartner':
           collectionName = 'deliveryPartner';
-          dashboardPath = '/delivery/homePage';
+          // Check verified status
+          const deliveryDoc = await getDoc(doc(db, 'deliveryPartner', user.uid));
+          const deliveryVerified = deliveryDoc.exists() ? deliveryDoc.data().verified : false;
+          dashboardPath = deliveryVerified ? '/delivery/homePage' : '/KYCVerification';
           break;
         case 'buyer':
           collectionName = 'buyer';

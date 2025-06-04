@@ -23,7 +23,7 @@ import FarmerBiddingPage from './pages/farmer/bidingPage'
 import BuyerBiddingPage from './pages/buyer/bidingPage'
 import BuyerSettingsPage from './pages/buyer/settingsPage'
 import TermsAndConditionsPage from './components/ui/terms&conditions'
-import FarmerKYCVerificationPage from './pages/farmer/KYCVerification'
+import KYCVerificationPage from './KYCVerification'
 import EditProfilePage from './pages/editProfile'
 import HelpAndSupport from './pages/farmer/help&support'
 import BuyerHelpAndSupport from './pages/buyer/help&support'
@@ -53,6 +53,7 @@ import { db, requestNotificationPermission } from './firebase/firebase';
 import { I18nextProvider } from 'react-i18next';
 import i18n from './i18n';
 import { doc, getDoc } from 'firebase/firestore';
+import ProductDetailsPage from './pages/farmer/ProductDetailsPage';
 
 
 function App() {
@@ -114,13 +115,14 @@ function App() {
       <Route path="/purchase-history" element={<PurchaseHistoryPage />} />
       <Route path="/farmer/orders" element={<Orders />} /> 
       <Route path="/farmer/add-product" element={<AddProductForm/>} />
+      <Route path="/farmer/product/:productId" element={<ProductDetailsPage/>}/>
       <Route path="/farmer/settings" element={<FarmerSettings/>} />
       <Route path="/buyer/settings" element={<BuyerSettingsPage/>} />
       <Route path='/farmer/advisory' element={<AdvisoryPage/> } />
       <Route path="/login" element={<LoginPage />} /> 
       <Route path="/farmer/biding" element={<FarmerBiddingPage/>} />
       <Route path='/buyer/biding' element={<BuyerBiddingPage/>} />
-      <Route path='KYCVerification' element={<FarmerKYCVerificationPage/>} />
+      <Route path='KYCVerification' element={<KYCVerificationPage/>} />
       <Route path="/settings/edit-profile" element={<EditProfilePage />} />
       <Route path='/farmer/help' element={<HelpAndSupport/>} />
       <Route path='/buyer/help' element={<BuyerHelpAndSupport/>} />

@@ -259,7 +259,7 @@ const Sidebar: React.FC<SidebarProps> = ({ menuItems }) => {
               <div>
                 <p className="font-medium">{userDetails.fullName}</p>
                 <p className="text-sm text-green-200 capitalize">
-                  {userDetails.role === "deliveryPartner" ? t('deliveryPartner') : t(userDetails.role)}
+                  {userDetails.role}
                 </p>
               </div>
             )}

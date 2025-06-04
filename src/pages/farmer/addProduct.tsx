@@ -63,7 +63,6 @@ const AddProductForm = () => {
     { value: 'Premium', label: t('premium') },
   ];
 
-  // Fetch existing products
   useEffect(() => {
     if (!user) {
       setError(t('error.notLoggedIn'));
@@ -93,7 +92,6 @@ const AddProductForm = () => {
     return () => unsubscribe();
   }, [user, t]);
 
-  // Calculate form completion progress
   const requiredFields = [itemName, itemDescription, price, stock, itemType];
   const filledFields = requiredFields.filter((field) => field !== '').length;
   const totalFields = requiredFields.length;
@@ -151,7 +149,6 @@ const AddProductForm = () => {
         throw new Error('User not authenticated');
       }
 
-      // Filter out empty image URLs
       const filteredImageUrls = imageUrls.filter((url) => url.trim() !== '');
 
       if (filteredImageUrls.length === 0) {
@@ -160,7 +157,6 @@ const AddProductForm = () => {
         return;
       }
 
-      // Save product data to Firestore
       await addDoc(collection(db, 'items'), {
         ownerUserId: user.uid,
         itemName,
@@ -178,7 +174,6 @@ const AddProductForm = () => {
         totalSales: 0,
       });
 
-      // Reset form and close modal
       setItemName('');
       setItemDescription('');
       setPrice('');
@@ -197,26 +192,6 @@ const AddProductForm = () => {
       setLoading(false);
     }
   };
-
-  if (loading) {
-    return (
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="flex justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-[#2CD14D]" />
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="text-center py-12">
-          <h2 className="text-xl font-medium text-gray-600 font-sans">{error}</h2>
-        </div>
-      </div>
-    );
-  }
 
   const getMenuItems = () => {
     return [
@@ -253,332 +228,360 @@ const AddProductForm = () => {
     ];
   };
 
-  return (
-    <div className="bg-gray-50 min-h-screen">
-      <Sidebar menuItems={getMenuItems()} />
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {/* Header Section */}
-        <div className="flex justify-between items-center mb-8">
-          <div className="flex items-center">
-            <h1 className="text-3xl font-bold text-gray-800">{t('addNewProduct')}</h1>
-          </div>
-          <Button
-            onClick={() => setIsModalOpen(true)}
-            className="bg-[#2CD14D] hover:bg-[#24B042] text-white flex items-center space-x-2"
-          >
-            <FaPlus className="h-4 w-4" />
-            <span>{t('addProduct')}</span>
-          </Button>
-        </div>
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <Loader2 className="h-10 w-10 animate-spin text-[#2CD14D]" />
+      </div>
+    );
+  }
 
-        {/* Modal for Adding Product */}
-        {isModalOpen && (
-          <div className="fixed inset-0 bg-green-50 bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-2xl p-8 w-full max-w-lg sm:max-w-md md:max-w-lg lg:max-w-xl max-h-[80vh] overflow-y-auto relative">
-              {!showConfirmation ? (
-                <>
-                  <h2 className="text-2xl font-semibold text-gray-800 mb-4 font-sans">{t('addNewProduct')}</h2>
-                  {/* Progress Indicator */}
-                  <div className="mb-6">
-                    <div className="flex justify-between mb-2">
-                      <span className="text-sm font-medium text-gray-600 font-sans">{t('formProgress')}</span>
-                      <span className="text-sm font-medium text-[#2CD14D] font-sans">{Math.round(progress)}%</span>
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-medium text-gray-600 font-sans">{error}</h2>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex">
+      <Sidebar menuItems={getMenuItems()} />
+      <div className="flex-1 ml-0 lg:ml-64 p-4 sm:p-6 lg:p-8">
+        <div className="max-w-6xl mx-auto">
+          {/* Header Section */}
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 font-serif">{t('addNewProduct')}</h1>
+            <Button
+              onClick={() => setIsModalOpen(true)}
+              className="bg-[#2CD14D] hover:bg-[#24B042] text-white flex items-center space-x-2 px-4 py-2 rounded-lg"
+            >
+              <FaPlus className="h-4 w-4" />
+              <span>{t('addProduct')}</span>
+            </Button>
+          </div>
+
+          {/* Modal for Adding Product */}
+          {isModalOpen && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-xl p-6 w-full max-w-md sm:max-w-lg max-h-[90vh] overflow-y-auto">
+                {!showConfirmation ? (
+                  <>
+                    <h2 className="text-xl font-semibold text-gray-800 mb-4 font-sans">{t('addNewProduct')}</h2>
+                    <div className="mb-4">
+                      <div className="flex justify-between text-sm font-medium mb-2">
+                        <span className="text-gray-600">{t('formProgress')}</span>
+                        <span className="text-[#2CD14D]">{Math.round(progress)}%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className="bg-[#2CD14D] h-2 rounded-full transition-all duration-300"
+                          style={{ width: `${progress}%` }}
+                        />
+                      </div>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2.5">
-                      <div
-                        className="bg-[#2CD14D] h-2.5 rounded-full transition-all duration-300"
-                        style={{ width: `${progress}%` }}
-                      />
-                    </div>
-                  </div>
-                  {formError && (
-                    <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg mb-4 font-sans">
-                      {formError}
-                    </div>
-                  )}
-                  <div className="space-y-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 font-sans mb-1">
-                        {t('productName')} <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={itemName}
-                        onChange={(e) => setItemName(e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2CD14D] focus:border-transparent font-sans"
-                        placeholder={t('placeholder.productName')}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 font-sans mb-1">
-                        {t('description')} <span className="text-red-500">*</span>
-                      </label>
-                      <textarea
-                        value={itemDescription}
-                        onChange={(e) => setItemDescription(e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2CD14D] focus:border-transparent font-sans"
-                        placeholder={t('placeholder.description')}
-                        rows={4}
-                      />
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {formError && (
+                      <div className="bg-red-50 border border-red-200 text-red-600 px-3 py-2 rounded-lg mb-4 text-sm font-sans">
+                        {formError}
+                      </div>
+                    )}
+                    <div className="space-y-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 font-sans mb-1">
-                          {t('price')} (₹) <span className="text-red-500">*</span>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          {t('productName')} <span className="text-red-500">*</span>
                         </label>
                         <input
-                          type="number"
-                          min="0.01"
-                          step="0.01"
-                          value={price}
-                          onChange={(e) => setPrice(e.target.value)}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2CD14D] focus:border-transparent font-sans"
-                          placeholder={t('placeholder.price')}
+                          type="text"
+                          value={itemName}
+                          onChange={(e) => setItemName(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2CD14D] focus:border-transparent text-sm"
+                          placeholder={t('placeholder.productName')}
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 font-sans mb-1">
-                          {t('discountPrice')} (₹)
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          {t('description')} <span className="text-red-500">*</span>
+                        </label>
+                        <textarea
+                          value={itemDescription}
+                          onChange={(e) => setItemDescription(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2CD14D] focus:border-transparent text-sm"
+                          placeholder={t('placeholder.description')}
+                          rows={4}
+                        />
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            {t('price')} (₹) <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            value={price}
+                            onChange={(e) => setPrice(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2CD14D] focus:border-transparent text-sm"
+                            placeholder={t('placeholder.price')}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            {t('discountPrice')} (₹)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={discountPrice}
+                            onChange={(e) => setDiscountPrice(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2CD14D] focus:border-transparent text-sm"
+                            placeholder={t('placeholder.discountPrice')}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          {t('stock')} <span className="text-red-500">*</span>
                         </label>
                         <input
                           type="number"
                           min="0"
-                          step="0.01"
-                          value={discountPrice}
-                          onChange={(e) => setDiscountPrice(e.target.value)}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2CD14D] focus:border-transparent font-sans"
-                          placeholder={t('placeholder.discountPrice')}
+                          value={stock}
+                          onChange={(e) => setStock(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2CD14D] focus:border-transparent text-sm"
+                          placeholder={t('placeholder.stock')}
                         />
                       </div>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 font-sans mb-1">
-                        {t('stock')} <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={stock}
-                        onChange={(e) => setStock(e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2CD14D] focus:border-transparent font-sans"
-                        placeholder={t('placeholder.stock')}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 font-sans mb-1">
-                        {t('productType')} <span className="text-red-500">*</span>
-                      </label>
-                      <select
-                        value={itemType}
-                        onChange={(e) => setItemType(e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2CD14D] focus:border-transparent font-sans"
-                      >
-                        <option value="" disabled>
-                          {t('placeholder.selectProductType')}
-                        </option>
-                        {productTypes.map((type, index) => (
-                          <option
-                            key={index}
-                            value={Object.values(t('productTypes', { returnObjects: true }))[index]}
-                          >
-                            {type}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          {t('productType')} <span className="text-red-500">*</span>
+                        </label>
+                        <select
+                          value={itemType}
+                          onChange={(e) => setItemType(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2CD14D] focus:border-transparent text-sm"
+                        >
+                          <option value="" disabled>
+                            {t('placeholder.selectProductType')}
                           </option>
+                          {productTypes.map((type, index) => (
+                            <option
+                              key={index}
+                              value={Object.values(t('productTypes', { returnObjects: true }))[index]}
+                            >
+                              {type}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          {t('category')} ({t('optional')})
+                        </label>
+                        <select
+                          value={category}
+                          onChange={(e) => setCategory(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2CD14D] focus:border-transparent text-sm"
+                        >
+                          <option value="">{t('selectCategory')}</option>
+                          {categoryOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          {t('imageUrls')} <span className="text-red-500">*</span>
+                        </label>
+                        {imageUrls.map((url, index) => (
+                          <div key={index} className="flex items-center space-x-2 mt-2">
+                            <input
+                              type="text"
+                              value={url}
+                              onChange={(e) => handleImageUrlChange(index, e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2CD14D] focus:border-transparent text-sm"
+                              placeholder={t('placeholder.imageUrl', { index: index + 1 })}
+                            />
+                          </div>
                         ))}
-                      </select>
+                        <Button
+                          onClick={handleAddImageField}
+                          className="mt-2 bg-gray-600 hover:bg-gray-700 text-white flex items-center space-x-2 px-3 py-1.5 rounded-lg text-sm"
+                        >
+                          <FaPlus className="h-3 w-3" />
+                          <span>{t('addAnotherUrl')}</span>
+                        </Button>
+                      </div>
+                      <div className="flex justify-end space-x-2 pt-4 border-t border-gray-200">
+                        <Button
+                          onClick={() => setIsModalOpen(false)}
+                          className="bg-gray-500 hover:bg-gray-600 text-white px-3 py-1.5 rounded-lg text-sm"
+                        >
+                          {t('cancel')}
+                        </Button>
+                        <Button
+                          onClick={handleSubmit}
+                          className="bg-[#2CD14D] hover:bg-[#24B042] text-white flex items-center space-x-2 px-3 py-1.5 rounded-lg text-sm"
+                          disabled={loading}
+                        >
+                          {loading ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <>
+                              <FaCheckCircle className="h-4 w-4" />
+                              <span>{t('submitProduct')}</span>
+                            </>
+                          )}
+                        </Button>
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 font-sans mb-1">
-                        {t('category')} ({t('optional')})
-                      </label>
-                      <select
-                        value={category}
-                        onChange={(e) => setCategory(e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2CD14D] focus:border-transparent font-sans"
-                      >
-                        <option value="">{t('selectCategory')}</option>
-                        {categoryOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 font-sans mb-1">
-                        {t('imageUrls')} <span className="text-red-500">*</span>
-                      </label>
-                      {imageUrls.map((url, index) => (
-                        <div key={index} className="flex items-center space-x-2 mt-2">
-                          <input
-                            type="text"
-                            value={url}
-                            onChange={(e) => handleImageUrlChange(index, e.target.value)}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2CD14D] focus:border-transparent font-sans"
-                            placeholder={t('placeholder.imageUrl', { index: index + 1 })}
-                          />
+                  </>
+                ) : (
+                  <>
+                    <h2 className="text-xl font-semibold text-gray-800 mb-4 font-sans">{t('confirmProductDetails')}</h2>
+                    <div className="space-y-3 bg-gray-50 p-4 rounded-lg">
+                      <div>
+                        <span className="text-sm font-medium text-gray-600">{t('productName')}:</span>
+                        <p className="text-base text-gray-800">{itemName}</p>
+                      </div>
+                      <div>
+                        <span className="text-sm font-medium text-gray-600">{t('description')}:</span>
+                        <p className="text-sm text-gray-700">{itemDescription}</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <span className="text-sm font-medium text-gray-600">{t('price')}:</span>
+                          <p className="text-sm text-gray-700">₹{price}</p>
                         </div>
-                      ))}
-                      <Button
-                        onClick={handleAddImageField}
-                        className="mt-2 bg-gray-600 hover:bg-gray-700 text-white flex items-center space-x-2"
-                      >
-                        <FaPlus className="h-4 w-4" />
-                        <span>{t('addAnotherUrl')}</span>
-                      </Button>
+                        <div>
+                          <span className="text-sm font-medium text-gray-600">{t('discountPrice')}:</span>
+                          <p className="text-sm text-gray-700">{discountPrice ? `₹${discountPrice}` : t('na')}</p>
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-sm font-medium text-gray-600">{t('stock')}:</span>
+                        <p className="text-sm text-gray-700">{stock} {t('units')}</p>
+                      </div>
+                      <div>
+                        <span className="text-sm font-medium text-gray-600">{t('productType')}:</span>
+                        <p className="text-sm text-gray-700">{itemType}</p>
+                      </div>
+                      {category && (
+                        <div>
+                          <span className="text-sm font-medium text-gray-600">{t('category')}:</span>
+                          <p className="text-sm text-gray-700">{category}</p>
+                        </div>
+                      )}
+                      {imageUrls.some((url) => url.trim() !== '') && (
+                        <div>
+                          <span className="text-sm font-medium text-gray-600">{t('images')}:</span>
+                          <div className="grid grid-cols-3 gap-2 mt-1">
+                            {imageUrls
+                              .filter((url) => url.trim() !== '')
+                              .map((url, index) => (
+                                <img
+                                  key={`url-${index}`}
+                                  src={url}
+                                  alt={t('productImageFromUrl')}
+                                  className="w-full h-16 object-cover rounded-md"
+                                  onError={(e) => {
+                                    e.currentTarget.src = 'https://via.placeholder.com/64?text=Invalid+URL';
+                                  }}
+                                />
+                              ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+                    <div className="flex justify-end space-x-2 mt-4">
                       <Button
-                        onClick={() => setIsModalOpen(false)}
-                        className="bg-gray-500 hover:bg-gray-600 text-white font-sans"
+                        onClick={() => setShowConfirmation(false)}
+                        className="bg-gray-500 hover:bg-gray-600 text-white px-3 py-1.5 rounded-lg text-sm"
                       >
-                        {t('cancel')}
+                        {t('back')}
                       </Button>
                       <Button
-                        onClick={handleSubmit}
-                        className="bg-[#2CD14D] hover:bg-[#24B042] text-white font-sans flex items-center space-x-2"
+                        onClick={handleFinalizeDetails}
+                        className="bg-[#2CD14D] hover:bg-[#24B042] text-white flex items-center space-x-2 px-3 py-1.5 rounded-lg text-sm"
                         disabled={loading}
                       >
                         {loading ? (
-                          <Loader2 className="h-5 w-5 animate-spin" />
+                          <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
                           <>
                             <FaCheckCircle className="h-4 w-4" />
-                            <span>{t('submitProduct')}</span>
+                            <span>{t('confirmAndAdd')}</span>
                           </>
                         )}
                       </Button>
                     </div>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <h2 className="text-2xl font-semibold text-gray-800 mb-4 font-sans">{t('confirmProductDetails')}</h2>
-                  <div className="space-y-4 bg-gray-50 p-4 rounded-lg">
-                    <div>
-                      <span className="text-sm font-medium text-gray-600 font-sans">{t('productName')}:</span>
-                      <p className="text-lg text-gray-800 font-sans">{itemName}</p>
-                    </div>
-                    <div>
-                      <span className="text-sm font-medium text-gray-600 font-sans">{t('description')}:</span>
-                      <p className="text-gray-700 font-sans">{itemDescription}</p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <span className="text-sm font-medium text-gray-600 font-sans">{t('price')}:</span>
-                        <p className="text-gray-700 font-sans">₹{price}</p>
-                      </div>
-                      <div>
-                        <span className="text-sm font-medium text-gray-600 font-sans">{t('discountPrice')}:</span>
-                        <p className="text-gray-700 font-sans">{discountPrice ? `₹${discountPrice}` : t('na')}</p>
-                      </div>
-                    </div>
-                    <div>
-                      <span className="text-sm font-medium text-gray-600 font-sans">{t('stock')}:</span>
-                      <p className="text-gray-700 font-sans">{stock} {t('units')}</p>
-                    </div>
-                    <div>
-                      <span className="text-sm font-medium text-gray-600 font-sans">{t('productType')}:</span>
-                      <p className="text-gray-700 font-sans">{itemType}</p>
-                    </div>
-                    {category && (
-                      <div>
-                        <span className="text-sm font-medium text-gray-600 font-sans">{t('category')}:</span>
-                        <p className="text-gray-700 font-sans">{category}</p>
-                      </div>
-                    )}
-                    {imageUrls.some((url) => url.trim() !== '') && (
-                      <div>
-                        <span className="text-sm font-medium text-gray-600 font-sans">{t('images')}:</span>
-                        <div className="grid grid-cols-3 gap-2 mt-2">
-                          {imageUrls
-                            .filter((url) => url.trim() !== '')
-                            .map((url, index) => (
-                              <img
-                                key={`url-${index}`}
-                                src={url}
-                                alt={t('productImageFromUrl')}
-                                className="w-full h-20 object-cover rounded-lg"
-                                onError={(e) => {
-                                  e.currentTarget.src = 'https://via.placeholder.com/80?text=Invalid+URL';
-                                }}
-                              />
-                            ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex justify-end space-x-3 mt-6">
-                    <Button
-                      onClick={() => setShowConfirmation(false)}
-                      className="bg-gray-500 hover:bg-gray-600 text-white font-sans"
-                    >
-                      {t('back')}
-                    </Button>
-                    <Button
-                      onClick={handleFinalizeDetails}
-                      className="bg-[#2CD14D] hover:bg-[#24B042] text-white font-sans flex items-center space-x-2"
-                      disabled={loading}
-                    >
-                      {loading ? (
-                        <Loader2 className="h-5 w-5 animate-spin" />
-                      ) : (
-                        <>
-                          <FaCheckCircle className="h-4 w-4" />
-                          <span>{t('confirmAndAdd')}</span>
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Display Existing Products */}
-        <div className="space-y-6">
-          <h2 className="text-2xl font-semibold text-gray-800 font-sans">{t('yourProducts')}</h2>
-          {products.length === 0 ? (
-            <div className="text-center text-gray-600 font-sans py-12 bg-white rounded-2xl shadow-lg">
-              {t('noProductsFound')}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {products.map((product) => (
-                <div
-                  key={product.id}
-                  className="bg-white p-6 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300"
-                >
-                  <div className="flex items-start space-x-4">
-                    {product.imageUrls[0] ? (
-                      <img
-                        src={product.imageUrls[0]}
-                        alt={product.itemName}
-                        className="w-20 h-20 object-cover rounded-lg"
-                      />
-                    ) : (
-                      <div className="w-20 h-20 bg-gray-100 rounded-lg flex items-center justify-center">
-                        <span className="text-gray-400 font-sans">{t('noImage')}</span>
-                      </div>
-                    )}
-                    <div className="flex-1">
-                      <div className="text-lg font-semibold text-gray-800 font-sans">{product.itemName}</div>
-                      <div className="text-sm text-gray-600 font-sans line-clamp-2">{product.itemDescription}</div>
-                      <div className="text-sm text-gray-600 font-sans mt-1">
-                        {t('price')}: ₹{product.price}{' '}
-                        {product.discountPrice && <span className="text-[#2CD14D]">(₹{product.discountPrice})</span>}
-                      </div>
-                      <div className="text-sm text-gray-600 font-sans">{t('stock')}: {product.stock} {t('units')}</div>
-                      <div className="text-sm text-gray-600 font-sans">{t('productType')}: {product.itemType}</div>
-                      {product.category && (
-                        <div className="text-sm text-gray-600 font-sans">{t('category')}: {product.category}</div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
+                  </>
+                )}
+              </div>
             </div>
           )}
+
+          {/* Display Existing Products */}
+          <div className="space-y-6">
+            <h2 className="text-xl font-semibold text-gray-800 font-sans">{t('yourProducts')}</h2>
+            {products.length === 0 ? (
+              <div className="text-center text-gray-600 font-sans py-12 bg-white rounded-xl shadow-sm">
+                {t('noProductsFound')}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {products.map((product) => (
+                  <div
+                    key={product.id}
+                    className="bg-white p-4 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-300 border border-gray-100"
+                  >
+                    <div className="flex flex-col space-y-3">
+                      {product.imageUrls[0] ? (
+                        <img
+                          src={product.imageUrls[0]}
+                          alt={product.itemName}
+                          className="w-full h-40 object-cover rounded-lg"
+                          onError={(e) => {
+                            e.currentTarget.src = 'https://via.placeholder.com/160?text=No+Image';
+                          }}
+                        />
+                      ) : (
+                        <div className="w-full h-40 bg-gray-100 rounded-lg flex items-center justify-center">
+                          <span className="text-gray-400 text-sm font-sans">{t('noImage')}</span>
+                        </div>
+                      )}
+                      <div className="space-y-1">
+                        <h3 className="text-lg font-semibold text-gray-800 truncate">{product.itemName}</h3>
+                        <p className="text-sm text-gray-600 line-clamp-2">{product.itemDescription}</p>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-sm font-medium text-gray-800">
+                            ₹{product.discountPrice || product.price}
+                          </span>
+                          {product.discountPrice && (
+                            <span className="text-sm text-gray-500 line-through">₹{product.price}</span>
+                          )}
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          {t('stock')}: {product.stock} {t('units')}
+                        </div>
+                      </div>
+                      <Button
+                        onClick={() => navigate(`/farmer/product/${product.id}`)}
+                        className="w-full bg-[#2CD14D] hover:bg-[#24B042] text-white text-sm py-1.5 rounded-lg"
+                      >
+                        {t('viewDetails')}
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -1,7 +1,6 @@
 import { useNavigate } from 'react-router-dom';
-import { UploadIcon } from 'lucide-react';
+import { FaUser, FaHome, FaVenusMars, FaMapPin, FaEnvelope, FaLock, FaImage } from 'react-icons/fa';
 import { useFormik } from 'formik';
-import { FaUser, FaHome, FaVenusMars, FaMapPin, FaEnvelope, FaLock } from 'react-icons/fa';
 import * as Yup from 'yup';
 import { useState } from 'react';
 import { Button } from '../../components/ui/button';
@@ -32,7 +31,10 @@ const BuyerProfilePage = () => {
       .required('PIN code is required'),
     password: Yup.string()
       .min(6, 'Password must be at least 6 characters')
-      .required('Password is required')
+      .required('Password is required'),
+    profileImage: Yup.string()
+      .url('Invalid URL format')
+      .nullable()
   });
 
   const formik = useFormik({
@@ -42,7 +44,8 @@ const BuyerProfilePage = () => {
       address: '',
       gender: '',
       pinCode: '',
-      password: ''
+      password: '',
+      profileImage: ''
     },
     validationSchema,
     onSubmit: async (values) => {
@@ -59,7 +62,7 @@ const BuyerProfilePage = () => {
         // 2. Update user profile with display name
         await updateProfile(userCredential.user, {
           displayName: values.fullName,
-          photoURL: profileImage || undefined
+          photoURL: values.profileImage || undefined
         });
 
         // 3. Save additional user data to Firestore in buyer collection
@@ -70,16 +73,16 @@ const BuyerProfilePage = () => {
           gender: values.gender,
           pinCode: values.pinCode,
           role: 'buyer',
-          profileImage: profileImage || null,
+          profileImage: values.profileImage || null,
           createdAt: new Date(),
-          status: 'active' // can be 'active', 'inactive', etc.
+          status: 'active'
         });
 
         // 4. Redirect to phone verification
         navigate('/buyer/homePage', { 
           state: { 
             ...values,
-            profileImage 
+            profileImage: values.profileImage 
           } 
         });
       } catch (error) {
@@ -89,46 +92,44 @@ const BuyerProfilePage = () => {
     }
   });
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setProfileImage(event.target?.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-b from-green-0 to-green-50">
       <div className="max-w-md h-[800px] w-full bg-white rounded-xl shadow-lg p-8 text-center space-y-12">
         <h1 className="text-2xl font-bold text-center mb-6">Complete your profile</h1>
-        
-        {/* Image Upload Section */}
-        <div className="flex flex-col items-center mb-8">
+        {/* Form Fields */}
+        <form onSubmit={formik.handleSubmit} className="space-y-4">
+           {/* Image URL Input Section */}
+        <div className="flex flex-col items-center ">
           <div className="relative w-24 h-24 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden mb-3">
             {profileImage ? (
               <img 
                 src={profileImage} 
                 alt="Profile" 
                 className="w-full h-full object-cover"
+                onError={() => setProfileImage(null)}
               />
             ) : (
-              <UploadIcon className="w-8 h-8 text-gray-500" />
+              <FaImage className="w-8 h-8 text-gray-500" />
             )}
           </div>
-          <label className="cursor-pointer">
-            <span className="text-sm font-medium text-green-600 hover:text-green-700">
-              {profileImage ? 'Change Image' : 'Upload Profile Image'}
-            </span>
-            <input 
-              type="file" 
-              accept="image/*"
-              onChange={handleImageUpload}
-              className="hidden"
+          <div className="relative w-full">
+            <FaImage className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              name="profileImage"
+              value={formik.values.profileImage}
+              onChange={(e) => {
+                formik.handleChange(e);
+                setProfileImage(e.target.value);
+              }}
+              onBlur={formik.handleBlur}
+              placeholder="Profile Image URL"
+              className={`w-full pl-10 pr-4 py-3 border ${formik.touched.profileImage && formik.errors.profileImage ? 'border-red-500' : 'border-gray-300'} rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent placeholder-gray-500`}
             />
-          </label>
+          </div>
+          {formik.touched.profileImage && formik.errors.profileImage && (
+            <p className="text-red-500 text-sm text-justify">{formik.errors.profileImage}</p>
+          )}
         </div>
 
         {/* Auth Error Message */}
@@ -137,9 +138,6 @@ const BuyerProfilePage = () => {
             {authError}
           </div>
         )}
-
-        {/* Form Fields */}
-        <form onSubmit={formik.handleSubmit} className="space-y-4">
           <div className="space-y-1">
             <div className="relative">
               <FaUser className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />

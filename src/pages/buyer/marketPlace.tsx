@@ -1,16 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, ClipboardList,  LayoutDashboard, Settings, ShoppingCart } from 'lucide-react';
+import { ChevronDown, ClipboardList, LayoutDashboard, Settings, ShoppingCart } from 'lucide-react';
 import { Input } from '../../components/ui/input';
 import { Button } from '../../components/ui/button';
 import { Slider } from '../../components/ui/slider';
 import ProductCard from '../../components/ui/productCard';
-import {  FaShoppingCart, FaStore, FaTimes } from 'react-icons/fa';
+import { FaShoppingCart, FaStore, FaTimes } from 'react-icons/fa';
 import { useNavigate } from 'react-router-dom';
 import { useCart } from '../../context/CartContext';
 import { collection, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/firebase';
 import Sidebar from '../../components/ui/sidebar';
 import { BiTrendingUp } from 'react-icons/bi';
+import { useAuth } from '../../context/authContext';
+import { toast } from 'react-hot-toast';
 
 interface Product {
   itemId: string;
@@ -25,7 +27,8 @@ interface Product {
 
 const MarketPlace: React.FC = () => {
   const navigate = useNavigate();
-  const { totalItems } = useCart();
+  const { totalItems, addToCart } = useCart();
+  const { user } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortOption, setSortOption] = useState<'default' | 'priceLowToHigh' | 'priceHighToLow'>('default');
@@ -34,8 +37,8 @@ const MarketPlace: React.FC = () => {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [showModal, setShowModal] = useState(false);
   const [modalLoading, setModalLoading] = useState(false);
+  const [showModal, setShowModal] = useState(false);
 
   const categories = ['Fruits', 'Vegetables', 'Dairy', 'Grains', 'Meat', 'Poultry', 'Seafood', 'Herbs', 'Other'];
 
@@ -92,7 +95,7 @@ const MarketPlace: React.FC = () => {
           const userDocRef = doc(db, 'farmer', data.ownerUserId);
           const userDoc = await getDoc(userDocRef);
           if (userDoc.exists()) {
-            farmerName = userDoc.data().displayName || 'Unknown Farmer';
+            farmerName = userDoc.data().fullName || 'Unknown Farmer';
           }
         }
 
@@ -116,6 +119,30 @@ const MarketPlace: React.FC = () => {
     } finally {
       setModalLoading(false);
     }
+  };
+
+  // Add to cart
+  const handleAddToCart = async () => {
+    if (!selectedProduct || !user || !user.uid) {
+      toast.error('Please log in to add items to your cart.');
+      handleCloseModal();
+      return;
+    }
+
+    try {
+      const cartItem = {
+        id: selectedProduct.itemId,
+      };
+
+      addToCart(cartItem);
+
+      toast.success(`${selectedProduct.itemName} added to cart!`);
+    } catch (error) {
+      console.error('Error adding item to cart:', error);
+      toast.error('Failed to add item to cart. Please try again.');
+    }
+
+    handleCloseModal();
   };
 
   // Filter and sort products
@@ -154,25 +181,22 @@ const MarketPlace: React.FC = () => {
     setSelectedProduct(null);
   };
 
-  const handleAddToCart = () => {
-    if (selectedProduct) {
-      console.log('Added to cart:', selectedProduct.itemName); // Placeholder for cart integration
-      // Future: Use useCart to add the item
-    }
-    handleCloseModal();
-  };
-   const getMenuItems = () => {
+  const getMenuItems = () => {
     const commonItems = [
       {
+        id: "dashboard",
         label: "Dashboard",
         onClick: () => navigate("/buyer/homepage"),
-        icon: <LayoutDashboard className="text-white" />},
-      {
-        label: "Marketplace",
-        onClick: () => navigate("/marketplace"),
-        icon: <FaStore className="text-white" />
+        icon: <LayoutDashboard className="text-white" />,
       },
       {
+        id: "marketplace",
+        label: "Marketplace",
+        onClick: () => navigate("/marketplace"),
+        icon: <FaStore className="text-white" />,
+      },
+      {
+        id: "orders",
         label: "Orders",
         icon: (
           <div className="flex items-center">
@@ -184,28 +208,29 @@ const MarketPlace: React.FC = () => {
             )}
           </div>
         ),
-        onClick: () => navigate("/cart")
+        onClick: () => navigate("/cart"),
       },
-       {
+      {
+        id: "purchase-history",
         label: "Purchase History",
         onClick: () => navigate("/purchase-history"),
-        icon: <ClipboardList className="text-white" />
+        icon: <ClipboardList className="text-white" />,
       },
       {
+        id: "biding-items",
         label: "Biding Items",
         onClick: () => navigate("/buyer/biding"),
-        icon: <BiTrendingUp className="text-white" />
+        icon: <BiTrendingUp className="text-white" />,
       },
       {
+        id: "settings",
         label: "Settings",
         onClick: () => navigate("/buyer/settings"),
-        icon: <Settings className="text-white" />
-      }
+        icon: <Settings className="text-white" />,
+      },
     ];
 
-    return [
-      ...commonItems,
-    ];
+    return [...commonItems];
   };
 
   return (
@@ -213,12 +238,9 @@ const MarketPlace: React.FC = () => {
       <Sidebar menuItems={getMenuItems()} />
       {/* Header with search */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8">
-         <div className="flex items-center">
-           
-            <h1 className="text-3xl font-bold text-gray-900 font-sans">
-              Marketplace
-            </h1>
-          </div>
+        <div className="flex items-center">
+          <h1 className="text-3xl font-bold text-gray-900 font-sans">Marketplace</h1>
+        </div>
         <div className="relative w-full md:w-96">
           <Input
             type="text"
@@ -295,8 +317,6 @@ const MarketPlace: React.FC = () => {
           )}
         </div>
         <div className="lg:w-64">
-
-
           <div className={`bg-white p-6 rounded-lg shadow-md ${isFilterOpen ? 'block' : 'hidden'} lg:block`}>
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-semibold">Filters</h2>
@@ -377,9 +397,7 @@ const MarketPlace: React.FC = () => {
             </div>
           </div>
         </div>
-
       </div>
-      
 
       {/* Product Details Modal */}
       {showModal && selectedProduct && (

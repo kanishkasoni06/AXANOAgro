@@ -1,7 +1,6 @@
 import { useNavigate } from 'react-router-dom';
-import { UploadIcon } from 'lucide-react';
+import { FaUser, FaHome, FaCar, FaMapPin, FaEnvelope, FaLock, FaImage } from 'react-icons/fa';
 import { useFormik } from 'formik';
-import { FaUser, FaHome, FaCar, FaMapPin, FaEnvelope, FaLock } from 'react-icons/fa';
 import * as Yup from 'yup';
 import { useState } from 'react';
 import { Button } from '../../components/ui/button';
@@ -33,7 +32,10 @@ const DeliveryProfilePage = () => {
       .required('PIN code is required'),
     password: Yup.string()
       .min(6, 'Password must be at least 6 characters')
-      .required('Password is required')
+      .required('Password is required'),
+    profileImage: Yup.string()
+      .url('Invalid URL format')
+      .nullable()
   });
 
   const formik = useFormik({
@@ -43,7 +45,8 @@ const DeliveryProfilePage = () => {
       address: '',
       vehicleNumber: '',
       pinCode: '',
-      password: ''
+      password: '',
+      profileImage: ''
     },
     validationSchema,
     onSubmit: async (values) => {
@@ -57,10 +60,10 @@ const DeliveryProfilePage = () => {
           values.password
         );
 
-        // 2. Update user profile with display name
+        // 2. Update user profile with display name and photo URL
         await updateProfile(userCredential.user, {
           displayName: values.fullName,
-          photoURL: profileImage || undefined
+          photoURL: values.profileImage || undefined
         });
 
         // 3. Save additional user data to Firestore in deliveryPartner collection
@@ -71,16 +74,21 @@ const DeliveryProfilePage = () => {
           vehicleNumber: values.vehicleNumber,
           pinCode: values.pinCode,
           role: 'delivery-partner',
-          profileImage: profileImage || null,
+          profileImage: values.profileImage || null,
           createdAt: new Date(),
-          status: 'active' // can be 'active', 'inactive', 'on-delivery'
+          status: 'active'
         });
 
-        // 4. Redirect to phone verification
-        navigate('/delivery/dashboard', { 
+        // 4. Redirect to KYC verification
+        navigate('/KYCVerification', { 
           state: { 
-            ...values,
-            profileImage 
+            fullName: values.fullName,
+            email: values.email,
+            address: values.address,
+            vehicleNumber: values.vehicleNumber,
+            pinCode: values.pinCode,
+            role: 'delivery-partner',
+            profileImage: values.profileImage || null
           } 
         });
       } catch (error) {
@@ -90,57 +98,54 @@ const DeliveryProfilePage = () => {
     }
   });
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setProfileImage(event.target?.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-b from-green-0 to-green-50">
       <div className="max-w-md h-[800px] w-full bg-white rounded-xl shadow-lg p-8 text-center space-y-12">
         <h1 className="text-2xl font-bold text-center mb-6">Complete your profile</h1>
         
-        {/* Image Upload Section */}
-        <div className="flex flex-col items-center mb-8">
-          <div className="relative w-24 h-24 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden mb-3">
-            {profileImage ? (
-              <img 
-                src={profileImage} 
-                alt="Profile" 
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <UploadIcon className="w-8 h-8 text-gray-500" />
-            )}
-          </div>
-          <label className="cursor-pointer">
-            <span className="text-sm font-medium text-green-600 hover:text-green-700">
-              {profileImage ? 'Change Image' : 'Upload Profile Image'}
-            </span>
-            <input 
-              type="file" 
-              accept="image/*"
-              onChange={handleImageUpload}
-              className="hidden"
-            />
-          </label>
-        </div>
-
-        {/* Auth Error Message */}
-        {authError && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-            {authError}
-          </div>
-        )}
-
         {/* Form Fields */}
         <form onSubmit={formik.handleSubmit} className="space-y-4">
+          {/* Image URL Input Section */}
+          <div className="flex flex-col items-center">
+            <div className="relative w-24 h-24 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden mb-3">
+              {profileImage ? (
+                <img 
+                  src={profileImage} 
+                  alt="Profile" 
+                  className="w-full h-full object-cover"
+                  onError={() => setProfileImage(null)}
+                />
+              ) : (
+                <FaImage className="w-8 h-8 text-gray-500" />
+              )}
+            </div>
+            <div className="relative w-full">
+              <FaImage className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                name="profileImage"
+                value={formik.values.profileImage}
+                onChange={(e) => {
+                  formik.handleChange(e);
+                  setProfileImage(e.target.value);
+                }}
+                onBlur={formik.handleBlur}
+                placeholder="Profile Image URL"
+                className={`w-full pl-10 pr-4 py-3 border ${formik.touched.profileImage && formik.errors.profileImage ? 'border-red-500' : 'border-gray-300'} rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent placeholder-gray-500`}
+              />
+            </div>
+            {formik.touched.profileImage && formik.errors.profileImage && (
+              <p className="text-red-500 text-sm text-justify">{formik.errors.profileImage}</p>
+            )}
+          </div>
+
+          {/* Auth Error Message */}
+          {authError && (
+            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+              {authError}
+            </div>
+          )}
+
           <div className="space-y-1">
             <div className="relative">
               <FaUser className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />

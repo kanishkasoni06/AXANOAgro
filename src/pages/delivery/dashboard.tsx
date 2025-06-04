@@ -34,8 +34,8 @@ interface Delivery {
   proposedAmount?: number;
   earnings: number;
   items: Item[];
-  source: "bidItems" | "orders"; // To identify the source collection
-  hasSubmittedBid?: boolean; // To track if bid is submitted
+  source: "bidItems" | "orders";
+  hasSubmittedBid?: boolean;
 }
 
 interface MonthlyEarnings {
@@ -45,9 +45,9 @@ interface MonthlyEarnings {
 
 interface RouteInsight {
   orderId: string;
-  estimatedTime: number; // in minutes
-  actualTime: number; // in minutes
-  difference: number; // in minutes
+  estimatedTime: number;
+  actualTime: number;
+  difference: number;
 }
 
 const DeliveryPartnerDashboard: React.FC = () => {
@@ -63,7 +63,6 @@ const DeliveryPartnerDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [proposedAmounts, setProposedAmounts] = useState<{ [key: string]: number }>({});
 
-  // Function to format Date object to a readable string
   const formatDateTime = (date: Date): string => {
     return date.toLocaleString("en-IN", {
       month: "short",
@@ -76,10 +75,9 @@ const DeliveryPartnerDashboard: React.FC = () => {
     }).replace(",", "");
   };
 
-  // Calculate distance using Haversine formula
   const haversineDistance = (coords1: Coordinates, coords2: Coordinates): number => {
     const toRad = (value: number) => (value * Math.PI) / 180;
-    const R = 6371; // Earth's radius in km
+    const R = 6371;
     const dLat = toRad(coords2.latitude - coords1.latitude);
     const dLon = toRad(coords2.longitude - coords1.longitude);
     const lat1 = toRad(coords1.latitude);
@@ -92,7 +90,6 @@ const DeliveryPartnerDashboard: React.FC = () => {
     return Number(distance.toFixed(2));
   };
 
-  // Handle increasing proposed amount
   const handleIncreaseAmount = (key: string, currentAmount: number) => {
     setProposedAmounts((prev) => ({
       ...prev,
@@ -100,7 +97,6 @@ const DeliveryPartnerDashboard: React.FC = () => {
     }));
   };
 
-  // Handle decreasing proposed amount
   const handleDecreaseAmount = (key: string, currentAmount: number) => {
     setProposedAmounts((prev) => ({
       ...prev,
@@ -108,7 +104,6 @@ const DeliveryPartnerDashboard: React.FC = () => {
     }));
   };
 
-  // Handle submitting proposed amount
   const handleSubmitBid = async (delivery: Delivery) => {
     if (!user) return;
     try {
@@ -148,7 +143,6 @@ const DeliveryPartnerDashboard: React.FC = () => {
     }
   };
 
-  // Fetch data from Firestore
   useEffect(() => {
     const fetchDashboardData = async () => {
       if (!user || !user.uid) {
@@ -158,7 +152,6 @@ const DeliveryPartnerDashboard: React.FC = () => {
 
       setLoading(true);
       try {
-        // Step 1: Fetch delivery partner's data
         const deliveryPartnerDoc = await getDoc(doc(db, "deliveryPartner", user.uid));
         if (!deliveryPartnerDoc.exists()) {
           console.warn("Delivery partner not found.");
@@ -166,18 +159,15 @@ const DeliveryPartnerDashboard: React.FC = () => {
           return;
         }
 
-        // Step 2: Fetch bidItems where status is 'accepted'
         const bidItemsQuery = query(
           collection(db, "bidItems"),
           where("status", "==", "accepted")
         );
         const bidItemsSnapshot = await getDocs(bidItemsQuery);
 
-        // Step 3: Fetch orders where status is 'ready' and no delivery partner assigned
         const ordersQuery = query(
           collection(db, "orders"),
-          where("status", "==", "ready"),
-          
+          where("status", "==", "ready")
         );
         const ordersSnapshot = await getDocs(ordersQuery);
 
@@ -195,16 +185,20 @@ const DeliveryPartnerDashboard: React.FC = () => {
           const data = bidDoc.data();
           const deliveryDetails = data.deliveryDetails || [];
           const deliveryBids = data.deliveryBids || [];
-          const isAssignedToUser = deliveryDetails.some(
-            (detail: any) => detail.deliveryPartnerId === user.uid
-          );
           const hasSubmittedBid = deliveryBids.some(
             (bid: any) => bid.deliveryPartnerId === user.uid
           );
 
+          const isAssignedToUser = deliveryDetails.some(
+            (detail: any) => detail.deliveryPartnerId === user.uid
+          );
+          const isAssignedToAnotherUser = deliveryDetails.some(
+            (detail: any) => detail.deliveryPartnerId && detail.deliveryPartnerId !== user.uid
+          );
+
           const orderId = bidDoc.id;
 
-          // Handle existing deliveries for metrics
+          // Metrics: Count completed and active deliveries for the logged-in user
           const deliveryDetail = deliveryDetails.find(
             (detail: any) => detail.deliveryPartnerId === user.uid && detail.deliveryStatus === "accepted"
           );
@@ -241,34 +235,36 @@ const DeliveryPartnerDashboard: React.FC = () => {
             }
           }
 
-          // Include in recent deliveries if not assigned to this user or no delivery partner assigned
-          if (!isAssignedToUser || deliveryDetails.every((detail: any) => detail.deliveryStatus !== "accepted")) {
+          // Recent Deliveries: Include unassigned or assigned to this user
+          const shouldInclude =
+            // Case 1: No deliveryDetails (unassigned)
+            deliveryDetails.length === 0 ||
+            // Case 2: Assigned to this user
+            isAssignedToUser;
+
+          if (shouldInclude && !isAssignedToAnotherUser) {
             let farmerName = "Unknown";
             let buyerName = "Unknown";
             let pickupPoint = "Unknown";
             let dropOffPoint = "Unknown";
-            let distance = 10; // Default distance
-            let baseAmount = 100; // Default base amount (₹10 per km)
+            let distance = 10;
+            let baseAmount = 100;
 
-            // Fetch farmer details
             if (data.ownerUserId) {
               const farmerDoc = await getDoc(doc(db, "farmer", data.ownerUserId));
               if (farmerDoc.exists()) {
                 const farmerData = farmerDoc.data() as { fullName?: string; coordinates?: Coordinates; location?: string };
                 farmerName = farmerData.fullName || "Unknown";
                 pickupPoint = farmerData.location || "Unknown";
-                if (farmerData.coordinates) {
-                  // Fetch buyer details
-                  if (data.acceptedBid?.buyerId) {
-                    const buyerDoc = await getDoc(doc(db, "buyer", data.acceptedBid.buyerId));
-                    if (buyerDoc.exists()) {
-                      const buyerData = buyerDoc.data() as { fullName?: string; address?: string; coordinates?: Coordinates };
-                      buyerName = buyerData.fullName || "Unknown";
-                      dropOffPoint = buyerData.address || "Unknown";
-                      if (buyerData.coordinates) {
-                        distance = haversineDistance(farmerData.coordinates, buyerData.coordinates);
-                        baseAmount = Math.round(distance * 10); // ₹10 per km
-                      }
+                if (farmerData.coordinates && data.acceptedBid?.buyerId) {
+                  const buyerDoc = await getDoc(doc(db, "buyer", data.acceptedBid.buyerId));
+                  if (buyerDoc.exists()) {
+                    const buyerData = buyerDoc.data() as { fullName?: string; address?: string; coordinates?: Coordinates };
+                    buyerName = buyerData.fullName || "Unknown";
+                    dropOffPoint = buyerData.address || "Unknown";
+                    if (buyerData.coordinates) {
+                      distance = haversineDistance(farmerData.coordinates, buyerData.coordinates);
+                      baseAmount = Math.round(distance * 10);
                     }
                   }
                 }
@@ -306,82 +302,95 @@ const DeliveryPartnerDashboard: React.FC = () => {
         // Process orders
         for (const orderDoc of ordersSnapshot.docs) {
           const data = orderDoc.data();
+          const deliveryDetails = data.deliveryDetails || [];
           const deliveryBids = data.deliveryBids || [];
           const hasSubmittedBid = deliveryBids.some(
             (bid: any) => bid.deliveryPartnerId === user.uid
           );
 
-          let farmerName = "Unknown";
-          let buyerName = "Unknown";
-          let pickupPoint = "Unknown";
-          let dropOffPoint = "Unknown";
-          let distance = 10; // Default distance
-          let baseAmount = 100; // Default base amount (₹10 per km)
-          const items: Item[] = data.items?.map((item: any) => ({
-            name: item.name || "Unknown Item",
-            quantity: item.quantity || 0,
-          })) || [{ name: "Unknown Item", quantity: 0 }];
+          const isAssignedToUser = deliveryDetails.some(
+            (detail: any) => detail.deliveryPartnerId === user.uid
+          );
+          const isAssignedToAnotherUser = deliveryDetails.some(
+            (detail: any) => detail.deliveryPartnerId && detail.deliveryPartnerId !== user.uid
+          );
 
-          // Fetch farmer details
-          const ownerUserIds = new Set<string>();
-          if (data.items && Array.isArray(data.items)) {
-            for (const item of data.items) {
-              const itemDoc = await getDoc(doc(db, "items", item.name));
-              if (itemDoc.exists()) {
-                const itemData = itemDoc.data();
-                if (itemData.ownerUserId) ownerUserIds.add(itemData.ownerUserId);
+          // Recent Deliveries: Include unassigned or assigned to this user
+          const shouldInclude =
+            // Case 1: No deliveryDetails (unassigned)
+            deliveryDetails.length === 0 ||
+            // Case 2: Assigned to this user
+            isAssignedToUser;
+
+          if (shouldInclude && !isAssignedToAnotherUser) {
+            let farmerName = "Unknown";
+            let buyerName = "Unknown";
+            let pickupPoint = "Unknown";
+            let dropOffPoint = "Unknown";
+            let distance = 10;
+            let baseAmount = 100;
+            const items: Item[] = data.items?.map((item: any) => ({
+              name: item.name || "Unknown Item",
+              quantity: item.quantity || 0,
+            })) || [{ name: "Unknown Item", quantity: 0 }];
+
+            const ownerUserIds = new Set<string>();
+            if (data.items && Array.isArray(data.items)) {
+              for (const item of data.items) {
+                const itemDoc = await getDoc(doc(db, "items", item.name));
+                if (itemDoc.exists()) {
+                  const itemData = itemDoc.data();
+                  if (itemData.ownerUserId) ownerUserIds.add(itemData.ownerUserId);
+                }
               }
             }
-          }
 
-          if (ownerUserIds.size > 0) {
-            const farmerId = Array.from(ownerUserIds)[0];
-            const farmerDoc = await getDoc(doc(db, "farmer", farmerId));
-            if (farmerDoc.exists()) {
-              const farmerData = farmerDoc.data() as { fullName?: string; coordinates?: Coordinates; location?: string };
-              farmerName = farmerData.fullName || "Unknown";
-              pickupPoint = farmerData.location || "Unknown";
-              if (farmerData.coordinates && data.buyerId) {
-                // Fetch buyer details
-                const buyerDoc = await getDoc(doc(db, "buyer", data.buyerId));
-                if (buyerDoc.exists()) {
-                  const buyerData = buyerDoc.data() as { fullName?: string; address?: string; coordinates?: Coordinates };
-                  buyerName = buyerData.fullName || "Unknown";
-                  dropOffPoint = buyerData.address || data.deliveryAddress || "Unknown";
-                  if (buyerData.coordinates) {
-                    distance = haversineDistance(farmerData.coordinates, buyerData.coordinates);
-                    baseAmount = Math.round(distance * 10); // ₹10 per km
+            if (ownerUserIds.size > 0) {
+              const farmerId = Array.from(ownerUserIds)[0];
+              const farmerDoc = await getDoc(doc(db, "farmer", farmerId));
+              if (farmerDoc.exists()) {
+                const farmerData = farmerDoc.data() as { fullName?: string; coordinates?: Coordinates; location?: string };
+                farmerName = farmerData.fullName || "Unknown";
+                pickupPoint = farmerData.location || "Unknown";
+                if (farmerData.coordinates && data.buyerId) {
+                  const buyerDoc = await getDoc(doc(db, "buyer", data.buyerId));
+                  if (buyerDoc.exists()) {
+                    const buyerData = buyerDoc.data() as { fullName?: string; address?: string; coordinates?: Coordinates };
+                    buyerName = buyerData.fullName || "Unknown";
+                    dropOffPoint = buyerData.address || data.deliveryAddress || "Unknown";
+                    if (buyerData.coordinates) {
+                      distance = haversineDistance(farmerData.coordinates, buyerData.coordinates);
+                      baseAmount = Math.round(distance * 10);
+                    }
                   }
                 }
               }
             }
-          }
 
-          recentDeliveriesData.push({
-            id: orderDoc.id,
-            orderId: orderDoc.id,
-            farmerName: farmerName,
-            buyerName: buyerName,
-            pickupPoint: pickupPoint,
-            dropOffPoint: dropOffPoint,
-            distance: distance,
-            status: hasSubmittedBid ? "Pending" : "Ready",
-            timestamp: data.createdAt,
-            timestampDate: data.createdAt.toDate(),
-            baseAmount: baseAmount,
-            proposedAmount: hasSubmittedBid ? deliveryBids.find((bid: any) => bid.deliveryPartnerId === user.uid)?.amount : undefined,
-            earnings: 0,
-            items: items,
-            source: "orders",
-            hasSubmittedBid: hasSubmittedBid,
-          });
+            recentDeliveriesData.push({
+              id: orderDoc.id,
+              orderId: orderDoc.id,
+              farmerName: farmerName,
+              buyerName: buyerName,
+              pickupPoint: pickupPoint,
+              dropOffPoint: dropOffPoint,
+              distance: distance,
+              status: hasSubmittedBid ? "Pending" : "Ready",
+              timestamp: data.createdAt,
+              timestampDate: data.createdAt.toDate(),
+              baseAmount: baseAmount,
+              proposedAmount: hasSubmittedBid ? deliveryBids.find((bid: any) => bid.deliveryPartnerId === user.uid)?.amount : undefined,
+              earnings: 0,
+              items: items,
+              source: "orders",
+              hasSubmittedBid: hasSubmittedBid,
+            });
+          }
         }
 
-        // Sort recent deliveries by timestamp (latest first) and limit to 5
         recentDeliveriesData.sort((a, b) => b.timestampDate.getTime() - a.timestampDate.getTime());
         setRecentDeliveries(recentDeliveriesData.slice(0, 5));
 
-        // Sort route insights by orderId
         routeInsightsData.sort((a, b) => {
           const orderA = recentDeliveriesData.find(d => d.orderId === a.orderId);
           const orderB = recentDeliveriesData.find(d => d.orderId === b.orderId);
@@ -391,7 +400,6 @@ const DeliveryPartnerDashboard: React.FC = () => {
         });
         setRouteInsights(routeInsightsData.slice(0, 5));
 
-        // Set metrics
         setTotalDeliveries(totalDeliveriesCount);
         setActiveDeliveries(activeDeliveriesCount);
         setTotalEarnings(totalEarningsAmount);
@@ -404,7 +412,6 @@ const DeliveryPartnerDashboard: React.FC = () => {
           setAverageRating(`${avgRating} / 5`);
         }
 
-        // Dummy data for monthly earnings
         const dummyMonthlyEarnings: MonthlyEarnings[] = [
           { month: "Jan 2025", amount: 5000 },
           { month: "Feb 2025", amount: 6000 },
@@ -423,7 +430,6 @@ const DeliveryPartnerDashboard: React.FC = () => {
     fetchDashboardData();
   }, [user]);
 
-  // Metrics for display
   const metrics = [
     { icon: <FaTruck className="text-[#2CD14D] text-3xl" />, title: "Total Deliveries", value: totalDeliveries },
     { icon: <FaHourglassHalf className="text-[#2CD14D] text-3xl" />, title: "Active Deliveries", value: activeDeliveries },
@@ -432,7 +438,6 @@ const DeliveryPartnerDashboard: React.FC = () => {
     { icon: <FaStar className="text-yellow-500 text-3xl" />, title: "Average Rating", value: averageRating },
   ];
 
-  // Chart data for Earnings vs. Month
   const chartData = {
     labels: monthlyEarnings.map(earning => earning.month),
     datasets: [
@@ -490,7 +495,6 @@ const DeliveryPartnerDashboard: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 p-6 font-sans">
-      {/* Key Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-10">
         {metrics.map((metric, index) => (
           <div
@@ -512,9 +516,7 @@ const DeliveryPartnerDashboard: React.FC = () => {
         ))}
       </div>
 
-      {/* Earnings Trend and Route Insights Side by Side */}
       <div className="flex flex-col lg:flex-row gap-6 mb-10 w-full">
-        {/* Earnings Trend Chart */}
         <div className="flex-1 bg-white rounded-xl shadow-lg p-6 border border-gray-100">
           <h2 className="text-xl font-bold text-gray-900 mb-4">
             Monthly Earnings (Earnings vs. Month)
@@ -530,7 +532,6 @@ const DeliveryPartnerDashboard: React.FC = () => {
           )}
         </div>
 
-        {/* Route Optimization Insights */}
         <div className="flex-1 bg-white rounded-xl shadow-lg p-6 border border-gray-100">
           <h2 className="text-xl font-bold text-gray-900 mb-4">
             Route Optimization Insights
@@ -582,7 +583,6 @@ const DeliveryPartnerDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Recent Deliveries Table */}
       <div className="bg-white rounded-lg shadow-lg p-6">
         <h2 className="text-xl font-semibold text-gray-900 mb-4">Recent Deliveries</h2>
         {loading ? (

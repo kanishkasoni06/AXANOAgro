@@ -1,31 +1,90 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from 'react-i18next';
-import { auth } from "../../firebase/firebase";
+import { auth, db } from "../../firebase/firebase";
+import { doc, getDoc } from "firebase/firestore";
 import { FaUser, FaBell, FaGlobe, FaCreditCard, FaLock, FaQuestionCircle, FaAngleRight, FaHandshake } from "react-icons/fa";
 import Sidebar from "../../components/ui/sidebar";
 import { LayoutDashboard, Leaf, ListCheckIcon, LucideSprout, Settings } from "lucide-react";
 
 interface UserProfile {
-  displayName: string | null;
+  fullName: string;
   email: string | null;
+  profileImage: string | null;
+  role: string;
 }
 
 const FarmerSettings = () => {
-  const { t } = useTranslation(); // Hook for translations
-  const [user, setUser] = useState<UserProfile | null>(null);
+  const { t } = useTranslation();
+  const [userDetails, setUserDetails] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const currentUser = auth.currentUser;
-    if (currentUser) {
-      setUser({
-        displayName: currentUser.displayName || t('defaultFarmerName'), // Use translation for fallback name
-        email: currentUser.email,
-      });
-    } else {
-      navigate("/farmer/settings"); // Redirect to login if not authenticated
-    }
+    const fetchUserDetails = async () => {
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        navigate("/login");
+        setLoading(false);
+        return;
+      }
+
+      try {
+        // Check local storage for cached user data
+        const storedUser = localStorage.getItem('authUser');
+        let parsedUser = storedUser ? JSON.parse(storedUser) : null;
+
+        if (parsedUser?.fullName && parsedUser?.role === 'farmer') {
+          setUserDetails({
+            fullName: parsedUser.fullName,
+            email: currentUser.email,
+            profileImage: parsedUser.profileImage || null,
+            role: parsedUser.role,
+          });
+          setLoading(false);
+          return;
+        }
+
+        // Fetch from Firestore
+        const userDoc = await getDoc(doc(db, "farmer", currentUser.uid));
+        if (userDoc.exists()) {
+          const data = userDoc.data();
+          const updatedUser = {
+            fullName: data.fullName || currentUser.displayName || t('defaultFarmerName'),
+            email: currentUser.email,
+            profileImage: data.profileImage || currentUser.photoURL || null,
+            role: 'farmer',
+          };
+          setUserDetails(updatedUser);
+          localStorage.setItem('authUser', JSON.stringify({
+            ...parsedUser,
+            fullName: updatedUser.fullName,
+            profileImage: updatedUser.profileImage,
+            role: 'farmer',
+          }));
+        } else {
+          // Fallback to auth data
+          setUserDetails({
+            fullName: currentUser.displayName || t('defaultFarmerName'),
+            email: currentUser.email,
+            profileImage: currentUser.photoURL || null,
+            role: 'farmer',
+          });
+        }
+      } catch (err) {
+        console.error("Error fetching user details:", err);
+        setUserDetails({
+          fullName: t('defaultFarmerName'),
+          email: currentUser.email,
+          profileImage: currentUser.photoURL || null,
+          role: 'farmer',
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUserDetails();
   }, [navigate, t]);
 
   const getMenuItems = () => {
@@ -74,20 +133,43 @@ const FarmerSettings = () => {
 
         {/* Profile Section */}
         <div className="bg-white rounded-xl shadow-sm p-6 mb-6 flex items-center">
-          <div className="w-16 h-16 bg-gray-200 rounded-full mr-4 flex items-center justify-center">
-            <FaUser className="text-gray-500 text-3xl" />
+          <div className="w-16 h-16 bg-gray-200 rounded-full mr-4 flex items-center justify-center overflow-hidden">
+            {userDetails?.profileImage ? (
+              <img
+                src={userDetails.profileImage}
+                alt="Profile"
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                  (e.currentTarget.nextElementSibling as HTMLElement)!.style.display = 'flex';
+                }}
+              />
+            ) : null}
+            <FaUser
+              className="text-gray-500 text-3xl"
+              style={{ display: userDetails?.profileImage ? 'none' : 'flex' }}
+            />
           </div>
           <div className="flex-1">
-            <h2 className="text-xl font-semibold text-gray-800">{user?.displayName || t('defaultFarmerName')}</h2>
-            <p className="text-sm text-green-600 flex items-center">
-              <span className="mr-1">✔</span> {t('verifiedFarmer')}
-            </p>
-            <button
-              onClick={() => navigate("/settings/edit-profile")}
-              className="text-sm text-blue-600 hover:underline mt-1"
-            >
-              {t('editProfile')}
-            </button>
+            {loading ? (
+              <div className="animate-pulse space-y-2">
+                <div className="h-5 bg-gray-200 rounded w-3/4"></div>
+                <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+              </div>
+            ) : (
+              <>
+                <h2 className="text-xl font-semibold text-gray-800">{userDetails?.fullName}</h2>
+                <p className="text-sm text-green-600 flex items-center">
+                  <span className="mr-1">✔</span> {t('verifiedFarmer')}
+                </p>
+                <button
+                  onClick={() => navigate("/settings/edit-profile")}
+                  className="text-sm text-blue-600 hover:underline mt-1"
+                >
+                  {t('editProfile')}
+                </button>
+              </>
+            )}
           </div>
         </div>
 

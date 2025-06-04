@@ -1,12 +1,24 @@
 import { Button } from '../ui/button';
 import { useNavigate } from 'react-router-dom';
 import { useCart } from '../../context/CartContext';
-import {  FaShoppingCart, FaStore } from 'react-icons/fa';
+import { FaShoppingCart, FaStore } from 'react-icons/fa';
 import { OrderConfirmationModal } from '../modals/orderConfirmationModal';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Sidebar from './sidebar';
 import { BiTrendingUp } from 'react-icons/bi';
 import { ClipboardList, LayoutDashboard, Settings } from 'lucide-react';
+import { useAuth } from '../../context/authContext';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../firebase/firebase';
+
+interface DisplayCartItem {
+  id: string;
+  quantity: number;
+  name: string;
+  farmerName: string;
+  category: string;
+  imageUrl: string;
+}
 
 const CartPage = () => {
   const {
@@ -16,31 +28,94 @@ const CartPage = () => {
     clearCart,
     totalItems,
     totalAmount,
+    loading,
   } = useCart();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [isConfirmationOpen, setIsConfirmationOpen] = useState(false);
+  const [displayItems, setDisplayItems] = useState<DisplayCartItem[]>([]);
+  const [loadingItems, setLoadingItems] = useState(false);
 
- 
+  // Fetch additional details for cart items
+  useEffect(() => {
+    const fetchItemDetails = async () => {
+      if (cartItems.length === 0) {
+        setDisplayItems([]);
+        return;
+      }
+
+      setLoadingItems(true);
+      try {
+        const enrichedItems: DisplayCartItem[] = [];
+        for (const item of cartItems) {
+          // Fetch item details from 'items' collection
+          const itemDocRef = doc(db, 'items', item.id);
+          const itemDoc = await getDoc(itemDocRef);
+          if (!itemDoc.exists()) continue;
+
+          const itemData = itemDoc.data();
+          const name = itemData.itemName || `Item ${item.id}`;
+          const category = itemData.itemType || 'N/A';
+          const imageUrl = itemData.imageUrls?.[0] || 'https://via.placeholder.com/150';
+
+          // Fetch farmer details from 'farmer' collection
+          let farmerName = 'Unknown Farmer';
+          if (itemData.ownerUserId) {
+            const farmerDocRef = doc(db, 'farmer', itemData.ownerUserId);
+            const farmerDoc = await getDoc(farmerDocRef);
+            if (farmerDoc.exists()) {
+              farmerName = farmerDoc.data().fullName || 'Unknown Farmer';
+            }
+          }
+
+          enrichedItems.push({
+            id: item.id,
+            quantity: item.quantity,
+            name,
+            farmerName,
+            category,
+            imageUrl,
+          });
+        }
+        setDisplayItems(enrichedItems);
+      } catch (error) {
+        console.error('Error fetching item details:', error);
+      } finally {
+        setLoadingItems(false);
+      }
+    };
+
+    fetchItemDetails();
+  }, [cartItems]);
 
   const handleCheckout = () => {
+    if (!user) {
+      navigate('/login');
+      return;
+    }
     setIsConfirmationOpen(true);
   };
 
   const handleOrderSuccess = (orderId: string) => {
     navigate(`/thank-you?orderId=${orderId}`);
   };
-   const getMenuItems = () => {
+
+  const getMenuItems = () => {
     const commonItems = [
       {
+        id: "dashboard",
         label: "Dashboard",
         onClick: () => navigate("/buyer/homepage"),
-        icon: <LayoutDashboard className="text-white" />},
-      {
-        label: "Marketplace",
-        onClick: () => navigate("/marketplace"),
-        icon: <FaStore className="text-white" />
+        icon: <LayoutDashboard className="text-white" />,
       },
       {
+        id: "marketplace",
+        label: "Marketplace",
+        onClick: () => navigate("/marketplace"),
+        icon: <FaStore className="text-white" />,
+      },
+      {
+        id: "orders",
         label: "Orders",
         icon: (
           <div className="flex items-center">
@@ -52,45 +127,46 @@ const CartPage = () => {
             )}
           </div>
         ),
-        onClick: () => navigate("/cart")
+        onClick: () => navigate("/cart"),
       },
       {
+        id: "purchase-history",
         label: "Purchase History",
         onClick: () => navigate("/purchase-history"),
-        icon: <ClipboardList className="text-white" />
+        icon: <ClipboardList className="text-white" />,
       },
       {
+        id: "biding-items",
         label: "Biding Items",
         onClick: () => navigate("/buyer/biding"),
-        icon: <BiTrendingUp className="text-white" />
+        icon: <BiTrendingUp className="text-white" />,
       },
       {
+        id: "settings",
         label: "Settings",
         onClick: () => navigate("/buyer/settings"),
-        icon: <Settings className="text-white" />
-      }
+        icon: <Settings className="text-white" />,
+      },
     ];
 
-    return [
-      ...commonItems,
-    ];
+    return [...commonItems];
   };
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
       <Sidebar menuItems={getMenuItems()} />
-      {/* Back button with icon */}
-       <div className="flex items-center">
-            
-            <h1 className="text-3xl font-bold text-gray-900 font-sans">
-              Cart
-            </h1>
-          </div>
-      
-      {cartItems.length === 0 ? (
+      <div className="flex items-center">
+        <h1 className="text-3xl font-bold text-gray-900 font-sans">Cart</h1>
+      </div>
+
+      {loading || loadingItems ? (
+        <div className="text-center py-12">
+          <p className="text-xl font-medium text-gray-600">Loading cart...</p>
+        </div>
+      ) : cartItems.length === 0 ? (
         <div className="text-center py-12">
           <h2 className="text-xl font-medium text-gray-600 mb-4">Your cart is empty</h2>
-          <Button 
+          <Button
             onClick={() => navigate('/marketplace')}
             className="bg-green-600 hover:bg-green-700"
           >
@@ -102,24 +178,23 @@ const CartPage = () => {
           <div className="lg:col-span-2">
             <div className="bg-white rounded-xl shadow-md overflow-hidden">
               <div className="divide-y divide-gray-200">
-                {cartItems.map(item => (
-                  <div key={item.id} className="p-6 flex flex-col sm:flex-row">
-                    <div className="flex-shrink-0 mb-4 sm:mb-0 sm:mr-6">
-                      <img
-                        className="h-24 w-24 rounded-md object-cover"
-                        src={item.imageUrl}
-                        alt={item.name}
-                      />
-                    </div>
+                {displayItems.map(item => (
+                  <div key={item.id} className="p-6 flex flex-col sm:flex-row items-center">
+                    <img
+                      src={item.imageUrl}
+                      alt={item.name}
+                      className="w-20 h-20 object-cover rounded-lg mr-4 mb-4 sm:mb-0"
+                    />
                     <div className="flex-grow">
-                      <div className="flex justify-between">
-                        <h3 className="text-lg font-medium text-gray-800">{item.name}</h3>
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <h3 className="text-lg font-medium text-gray-800">{item.name}</h3>
+                          <p className="text-sm text-gray-600">Farmer: {item.farmerName}</p>
+                          <p className="text-sm text-gray-600">Category: {item.category}</p>
+                        </div>
                         <p className="text-lg font-semibold text-green-600">
-                          ₹{(item.price * item.quantity).toFixed(2)}
+                          Quantity: {item.quantity}
                         </p>
-                      </div>
-                      <div className="mt-2 flex items-center">
-                        <p className="text-gray-600">₹{item.price.toFixed(2)} per kg</p>
                       </div>
                       <div className="mt-4 flex items-center">
                         <Button
@@ -151,7 +226,7 @@ const CartPage = () => {
               </div>
             </div>
           </div>
-          
+
           <div className="lg:col-span-1">
             <div className="bg-white rounded-xl shadow-md p-6">
               <h2 className="text-lg font-medium text-gray-800 mb-4">Order Summary</h2>
@@ -196,9 +271,12 @@ const CartPage = () => {
         isOpen={isConfirmationOpen}
         onClose={() => setIsConfirmationOpen(false)}
         totalAmount={totalAmount}
-        cartItems={cartItems.map(item => ({
-          ...item,
-          price: item.price.toString(),
+        cartItems={displayItems.map(item => ({
+          id: item.id,
+          name: item.name,
+          price: "0", // Placeholder price since it's not fetched
+          quantity: item.quantity,
+          imageUrl: item.imageUrl,
         }))}
         onConfirm={handleOrderSuccess}
       />
